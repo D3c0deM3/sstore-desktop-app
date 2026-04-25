@@ -1,0 +1,191 @@
+.registration-container {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  background-color: #02111d;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  padding: 32px 16px;
+  box-sizing: border-box;
+}
+
+.registration-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background-image: url("../assets/registration-page/storage-text.svg");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.4;
+  z-index: 0;
+}
+
+.form-card {
+  position: relative;
+  z-index: 1;
+  background-color: #042631;
+  padding: 2.4rem 2rem;
+  border-radius: 16px;
+  width: 90%;
+  height: auto;
+  max-width: 500px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+  color: #bbb;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.tab {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: color 0.3s;
+  background: transparent;
+  border: 0;
+  color: #8aa0a8;
+  font: inherit;
+  font-weight: 800;
+}
+
+.tab.active {
+  color: #ffffff;
+}
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background-color: #6c6c6c;
+  margin: 0 1rem;
+}
+
+.form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form input {
+  width: 100%;
+  padding: 0.9rem;
+  background-color: #042631; /* same as card */
+  border: 1px solid #4c7273;
+  border-radius: 10px;
+  color: #e0e0e0;
+  font-size: 1rem;
+  transition: border-color 0.3s, background-color 0.3s;
+}
+
+.form input::placeholder {
+  color: #8a8a8a;
+}
+
+.form input:focus {
+  border-color: #6ca0a0;
+  outline: none;
+}
+
+.form button {
+  background-color: #4c7273;
+  color: #ffffff;
+  padding: 0.9rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  font-weight: bold;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+.form button:hover {
+  background-color: #6ca0a0;
+}
+
+.store-image-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed #4c7273;
+  border-radius: 12px;
+  color: #d6e2e6;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.store-image-picker:hover {
+  border-color: #6ca0a0;
+  background-color: rgba(108, 160, 160, 0.08);
+}
+
+.store-image-picker input {
+  display: none;
+}
+
+.store-image-preview {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 12px;
+  border: 1px solid #4c7273;
+  background-color: #02111d;
+  background-position: center;
+  background-size: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8aa0a8;
+  font-weight: 800;
+}
+
+.store-image-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.store-image-copy strong {
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.store-image-copy small {
+  color: #8aa0a8;
+  font-size: 0.86rem;
+}
+
+.error-message {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 14px;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

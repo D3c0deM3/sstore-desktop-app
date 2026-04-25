@@ -1,0 +1,21 @@
+[package]
+name = "sstore-desktop"
+version = "0.1.0"
+description = "SStore desktop app"
+authors = ["SStore"]
+edition = "2021"
+build = "build.rs"
+
+[lib]
+name = "sstore_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+time = { version = "0.3", features = ["formatting", "macros"] }

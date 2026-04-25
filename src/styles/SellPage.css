@@ -1,0 +1,516 @@
+/* SellPage styles */
+
+:root {
+  --sellpage-selection-bg: #232735;
+  --bar-item-color: #393e4c;
+  --bar-item-text-color: white;
+}
+
+.light-theme {
+  --sellpage-selection-bg: #fff;
+  --bar-item-color: white;
+  --bar-item-text-color: #041421;
+}
+
+.sell-page-content-wrapper {
+  padding-top: 12px;
+}
+
+.sell-page-header-section {
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.sell-page-title {
+  margin-bottom: 0;
+  font-size: 32px;
+}
+
+.sell-page-search-container {
+  margin-bottom: 16px;
+}
+
+.sell-page-scanner-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+.sell-page-scanner-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.sell-page-scanner-subtitle,
+.sell-page-scanner-status {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.sell-page-scanner-status {
+  color: #4c7273;
+  font-weight: 700;
+}
+
+.sell-page-scanner-url {
+  max-width: min(620px, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(76, 114, 115, 0.12);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sell-page-scanner-qr-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.sell-page-scanner-qr {
+  width: 128px;
+  height: 128px;
+  flex: 0 0 128px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+}
+
+.sell-page-scanner-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sell-page-scanner-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.sell-page-scanner-btn {
+  min-width: 76px;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #4c7273;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.sell-page-scanner-btn.secondary {
+  background: #2563eb;
+}
+
+.sell-page-scanner-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sell-page-product-selection {
+  flex: unset;
+  height: auto;
+  min-height: 340px; /* Ensures card doesn't look too small with few items */
+  max-height: 100%;
+  background: var(--sellpage-selection-bg);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.2s;
+  box-shadow: 0 4px 6px var(--color-shadow);
+}
+
+/* Product cards inside product selection: default (dark theme) shadow */
+.sell-page-product-selection .sell-page-product-card {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  z-index: 2;
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+/* More intense shadow for product cards in light theme */
+.light-theme .sell-page-product-selection .sell-page-product-card {
+  box-shadow: 0 6px 24px 0 rgba(44, 62, 80, 0.13),
+    0 1.5px 6px 0 rgba(44, 62, 80, 0.09);
+}
+
+/* Dark theme override for product cards */
+html.dark .sell-page-product-selection .sell-page-product-card {
+  background: var(--sellpage-product-card-bg) !important;
+  color: #fff !important;
+}
+
+.sell-page-category-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  background: #393e4c;
+  border-radius: 12px;
+  padding: 5px;
+}
+
+/* Light theme override for category bar */
+.light-theme .sell-page-category-bar {
+  background: #eeeeee;
+}
+
+.sell-page-category-btn {
+  flex: 1;
+  background: var(--bar-item-color);
+  color: var(--bar-item-text-color);
+  border: none;
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sell-page-category-btn.active {
+  background: #4c7273;
+  color: #fff;
+}
+
+.sell-page-products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 18px;
+  width: 100%;
+  margin-top: 18px;
+  overflow-y: auto;
+  flex: 1;
+  align-items: start; /* Prevent grid items from stretching vertically */
+  padding-left: 0.5vw;
+  padding-top: 1vh;
+  padding-right: 0.5vw;
+}
+
+.sell-page-product-card {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  padding: 28px 14px 24px 14px; /* Increased top and bottom padding */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  margin-bottom: 18px;
+  min-width: 0;
+  align-self: start; /* Prevent card from stretching vertically */
+  max-height: 320px; /* Optional: limit max height for very tall content */
+}
+
+.sell-page-product-card:hover {
+  background: var(--color-border);
+}
+
+.sell-page-product-img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  border: 1.5px solid #e0e0e0;
+  margin-bottom: 10px;
+}
+
+.sell-page-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eef2f7, #d8e1ea);
+  color: #4c7273;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sell-page-product-name {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: inherit;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.sell-page-product-price {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.sell-page-cart-area {
+  flex: 1;
+  background: #2e3342;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+}
+
+.sell-page-cart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.sell-page-cart-title {
+  color: #fff;
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.sell-page-cart-close-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.sell-page-cart-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 24px;
+}
+
+.sell-page-cart-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: #232735;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+/* Light theme override for cart item background, text/icon colors, shadow, and border */
+.light-theme .sell-page-cart-item {
+  background: #f5f6fa;
+  border: 1.5px solid #e4e8ef;
+}
+.light-theme .sell-page-cart-item-name {
+  color: var(--color-text-primary);
+}
+.light-theme .sell-page-cart-item-price {
+  color: var(--color-text-secondary);
+}
+.light-theme .sell-page-cart-qty-btn,
+.light-theme .sell-page-cart-remove-btn {
+  color: var(--color-text-secondary);
+}
+.light-theme .sell-page-cart-qty {
+  background: #e4e8ef;
+}
+.light-theme .sell-page-cart-qty-value {
+  color: var(--color-text-primary);
+}
+
+.sell-page-cart-item-img {
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.sell-page-cart-item-info {
+  flex: 1;
+  min-width: 110px;
+}
+
+.sell-page-cart-item-name {
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+}
+
+.sell-page-cart-item-price {
+  font-weight: 700;
+  font-size: 13px;
+  color: #4c7273;
+}
+
+.sell-page-cart-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.sell-page-cart-qty-btn {
+  background: none;
+  border: none;
+  color: #bfc9d1;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sell-page-cart-qty {
+  background: #393e4c;
+  border-radius: 6px;
+  /* padding: 4px 8px; */
+  min-width: 28px;
+  text-align: center;
+}
+
+.sell-page-cart-qty-value {
+  width: auto;
+  min-width: 36px;
+  max-width: 80px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 16px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  padding: 0;
+  flex: 1 1 auto;
+  transition: width 0.15s;
+}
+
+/* Remove number input spinners for all browsers in cart quantity field */
+.sell-page-cart-qty-value[type="number"]::-webkit-inner-spin-button,
+.sell-page-cart-qty-value[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.sell-page-cart-qty-value[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.sell-page-cart-remove-btn {
+  background: none;
+  border: none;
+  color: #bfc9d1;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sell-page-cart-discount-input {
+  flex: 1 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sell-page-cart-discount-input[type="number"]::-webkit-inner-spin-button,
+.sell-page-cart-discount-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.sell-page-cart-discount-input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+@media (max-width: 1180px) {
+  .sell-page-container.products-page {
+    flex-direction: column;
+    height: auto !important;
+    overflow: auto !important;
+  }
+
+  .sell-page-cart-area {
+    flex: 0 0 auto !important;
+    position: relative !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: auto !important;
+    margin-left: 0 !important;
+  }
+
+  .sell-page-scanner-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sell-page-scanner-url {
+    max-width: 100%;
+  }
+
+  .sell-page-scanner-qr-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.sell-page-cart-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.sell-page-cart-total-label {
+  color: #bfc9d1;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.sell-page-cart-total-value {
+  color: #fff;
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.sell-page-cart-pay-btn {
+  background: #4c7273;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 16px 0;
+  font-weight: 700;
+  font-size: 20px;
+  width: 100%;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.sell-page-cart-pay-btn:hover {
+  background-color: #5a8384;
+}

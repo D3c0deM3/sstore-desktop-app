@@ -1,0 +1,263 @@
+.tool-page {
+  min-height: 100vh;
+  padding: 28px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+}
+
+.tool-page-state {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.tool-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.tool-header h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.tool-header p,
+.tool-muted,
+.tool-empty {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.tool-primary-button,
+.tool-form button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  color: #fff;
+  background: var(--color-active);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tool-primary-button:disabled,
+.tool-form button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.tool-alert {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.tool-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.tool-metric-card,
+.tool-panel,
+.advice-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px var(--color-shadow);
+}
+
+.tool-metric-card {
+  padding: 18px;
+}
+
+.tool-metric-card span {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.tool-metric-card strong {
+  display: block;
+  font-size: clamp(20px, 2vw, 28px);
+  line-height: 1.15;
+}
+
+.tool-metric-card.positive strong {
+  color: var(--color-success);
+}
+
+.tool-metric-card.danger strong {
+  color: var(--color-danger);
+}
+
+.tool-grid {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.tool-grid.two-columns {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.tool-panel {
+  padding: 18px;
+}
+
+.tool-panel h2 {
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+
+.tool-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.tool-form.stacked {
+  grid-template-columns: 1fr;
+}
+
+.tool-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-form input,
+.tool-form select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.tool-form input:focus,
+.tool-form select:focus {
+  border-color: var(--color-active);
+}
+
+.tool-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tool-list-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-tertiary);
+}
+
+.tool-list-row span {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+
+.tool-list-row strong {
+  text-align: right;
+}
+
+.tool-list-row.total strong {
+  color: var(--color-success);
+}
+
+.calculator-result {
+  align-self: start;
+}
+
+.advice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.advice-card {
+  padding: 18px;
+  border-left: 4px solid var(--color-text-muted);
+}
+
+.advice-card span {
+  display: block;
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.advice-card p {
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.advice-card.positive {
+  border-left-color: var(--color-success);
+}
+
+.advice-card.warning,
+.advice-card.info {
+  border-left-color: var(--color-info);
+}
+
+.advice-card.danger {
+  border-left-color: var(--color-danger);
+}
+
+@media (max-width: 1100px) {
+  .tool-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tool-grid.two-columns,
+  .advice-grid,
+  .tool-list.compact {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .tool-page {
+    padding: 16px;
+  }
+
+  .tool-header {
+    flex-direction: column;
+  }
+
+  .tool-metric-grid,
+  .tool-form {
+    grid-template-columns: 1fr;
+  }
+}
