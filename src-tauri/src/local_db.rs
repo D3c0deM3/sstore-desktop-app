@@ -199,6 +199,21 @@ fn route_dynamic(
         }
     }
 
+    if let Some(id) = path_id(path, "/api/categories/update/", "/") {
+        if method == "PUT" {
+            let name = text(body, "name");
+            if name.is_empty() {
+                return Ok(error(400, "Category name is required"));
+            }
+            conn.execute(
+                "UPDATE categories SET name = ?1 WHERE id = ?2 AND market_id = ?3",
+                params![name, id, market.id],
+            )
+            .map_err(|err| err.to_string())?;
+            return Ok(ok(json!({"message": "Category updated successfully"})));
+        }
+    }
+
     if let Some(id) = path_id(path, "/api/products/edit/", "/") {
         if method == "GET" {
             return ok_result(product_json(conn, market.id, id)?);

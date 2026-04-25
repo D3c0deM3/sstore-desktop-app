@@ -7,6 +7,7 @@ import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import BulkDeleteModal from "../components/BulkDeleteModal";
 import EditProductModal from "../components/EditProductModal";
 import AddProductModal from "../components/AddProductDrawer";
+import CategoryManagementModal from "../components/CategoryManagementModal";
 import { resolveMediaUrl } from "../utils/imageSource";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -45,9 +46,11 @@ const ProductsPage = () => {
   });
   const [categories, setCategories] = useState([]);
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [addProductForm, setAddProductForm] = useState({
     category_id: categories.length > 0 ? categories[0].id : "",
+    new_category: "",
     name: "",
     quantity: "",
     min_quantity: "50",
@@ -55,7 +58,6 @@ const ProductsPage = () => {
     price_per_quantity: "",
     barcode: "",
     expiry_date: "",
-    batch_number: "",
     status: "available",
   });
   const [addProductLoading, setAddProductLoading] = useState(false);
@@ -192,6 +194,7 @@ const ProductsPage = () => {
     setShowAddProduct(false);
     setAddProductForm({
       category_id: defaultCategoryId,
+      new_category: "",
       name: "",
       quantity: "",
       min_quantity: "50",
@@ -199,7 +202,6 @@ const ProductsPage = () => {
       price_per_quantity: "",
       barcode: "",
       expiry_date: "",
-      batch_number: "",
       status: "available",
     });
     setAddProductError("");
@@ -229,11 +231,41 @@ const ProductsPage = () => {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("Token not found");
 
+      let categoryIdToUse = addProductForm.category_id;
+
+      if (addProductForm.category_id === "new" && addProductForm.new_category) {
+        // Create new category first
+        const catRes = await fetch(`${apiBaseUrl}/api/categories/create/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Token ${token}`,
+          },
+          body: JSON.stringify({ name: addProductForm.new_category }),
+        });
+        if (!catRes.ok) throw new Error("Yangi kategoriyani yaratib bo'lmadi");
+        
+        // Fetch categories to get the id of the newly created category
+        const catsRes = await fetch(`${apiBaseUrl}/api/categories/`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Token ${token}`,
+          },
+        });
+        if (!catsRes.ok) throw new Error("Kategoriyalarni yangilab bo'lmadi");
+        const listCats = await catsRes.json();
+        const foundCat = listCats.find(c => c.name === addProductForm.new_category);
+        if (!foundCat) throw new Error("Yangi kategoriya ro'yxatdan topilmadi");
+        
+        categoryIdToUse = foundCat.id;
+      }
+
       let response;
       if (addProductForm.localImageFile) {
         // Use FormData if image file is present
         const formData = new FormData();
-        formData.append("category_id", Number(addProductForm.category_id));
+        formData.append("category_id", Number(categoryIdToUse));
         formData.append("name", addProductForm.name);
         formData.append("quantity", Number(addProductForm.quantity));
         formData.append("min_quantity", Number(addProductForm.min_quantity || 50));
@@ -245,7 +277,6 @@ const ProductsPage = () => {
         formData.append("status", addProductForm.status);
         formData.append("barcode", addProductForm.barcode || "");
         formData.append("expiry_date", addProductForm.expiry_date || "");
-        formData.append("batch_number", addProductForm.batch_number || "");
         formData.append("image", addProductForm.localImageFile);
         formData.append("bought_price", addProductForm.bought_price || "");
         response = await fetch(`${apiBaseUrl}/api/products/create/`, {
@@ -258,7 +289,7 @@ const ProductsPage = () => {
       } else {
         // Otherwise, send JSON as before
         const payload = {
-          category_id: Number(addProductForm.category_id),
+          category_id: Number(categoryIdToUse),
           name: addProductForm.name,
           quantity: Number(addProductForm.quantity),
           min_quantity: Number(addProductForm.min_quantity || 50),
@@ -269,8 +300,7 @@ const ProductsPage = () => {
           status: addProductForm.status,
           barcode: addProductForm.barcode || "",
           expiry_date: addProductForm.expiry_date || "",
-          batch_number: addProductForm.batch_number || "",
-          bought_price: addProductForm.bought_price || "",
+          bought_price: addProductForm.bought_price ? parseFloat(addProductForm.bought_price).toFixed(2) : null,
         };
         response = await fetch(`${apiBaseUrl}/api/products/create/`, {
           method: "POST",
@@ -282,7 +312,11 @@ const ProductsPage = () => {
         });
       }
 
-      if (!response.ok) throw new Error("Mahsulotni yaratib bolmadi");
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error("Failed to add product:", errorData);
+        throw new Error("Mahsulotni yaratib bolmadi: " + errorData);
+      }
 
       // Instead of just adding the returned product, fetch the full list again
       const fetchProducts = async () => {
@@ -322,6 +356,7 @@ const ProductsPage = () => {
       // Clear the add product form fields
       setAddProductForm({
         category_id: categories.length > 0 ? categories[0].id : "",
+        new_category: "",
         name: "",
         quantity: "",
         min_quantity: "50",
@@ -329,7 +364,6 @@ const ProductsPage = () => {
         price_per_quantity: "",
         barcode: "",
         expiry_date: "",
-        batch_number: "",
         status: "available",
       });
       setShowAddProduct(false);
@@ -1012,6 +1046,29 @@ const ProductsPage = () => {
         error={addProductError}
         apiBaseUrl={apiBaseUrl}
       />
+      <CategoryManagementModal
+        show={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        categories={categories}
+        apiBaseUrl={apiBaseUrl}
+        refreshData={async () => {
+          const token = localStorage.getItem("token");
+          if (!token) return;
+          const [productsRes, categoriesRes] = await Promise.all([
+            fetch(`${apiBaseUrl}/api/products/`, {
+              headers: { Authorization: `Token ${token}` }
+            }),
+            fetch(`${apiBaseUrl}/api/categories/`, {
+              headers: { Authorization: `Token ${token}` }
+            })
+          ]);
+          if (productsRes.ok && categoriesRes.ok) {
+            setCategories(asArray(await categoriesRes.json()));
+            const data = await productsRes.json();
+            setProducts(Array.isArray(data?.products) ? data.products : []);
+          }
+        }}
+      />
       {/* Refill Product Modal */}
       {refillModal.show && (
         <div
@@ -1256,6 +1313,13 @@ const ProductsPage = () => {
                 ) : (
                   <span className="download-icon" />
                 )}
+              </button>
+              <button
+                className="add-product-btn"
+                style={{ background: "#007bff", marginLeft: 10, marginRight: 10 }}
+                onClick={() => setShowCategoryModal(true)}
+              >
+                Kategoriyalar
               </button>
               <button
                 className="add-product-btn"

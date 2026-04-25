@@ -1,10 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
-import QRCode from "qrcode";
 import "../styles/ProductsPage.css";
 import "../styles/SellPage.css";
 import deleteIcon from "../assets/dashboard/delete.svg";
 import { resolveMediaUrl } from "../utils/imageSource";
-import { desktopInvoke, isDesktopApp } from "../desktop/tauriClient";
 
 const SellPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -24,13 +22,7 @@ const SellPage = () => {
   const [cardAmount, setCardAmount] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [receipt, setReceipt] = useState(null);
-  const [scannerServer, setScannerServer] = useState(null);
-  const [showScannerPanel, setShowScannerPanel] = useState(true);
-  const [scannerStatus, setScannerStatus] = useState("");
-  const [scannerConnected, setScannerConnected] = useState(false);
-  const [scannerQrSvg, setScannerQrSvg] = useState("");
-  const lastScannerEventIdRef = useRef(0);
-  const scannerSyncedRef = useRef(false);
+  const [barcodeInput, setBarcodeInput] = useState("");
 
   const [showQarzModal, setShowQarzModal] = useState(false);
   const [debtors, setDebtors] = useState([]);
@@ -110,74 +102,27 @@ const SellPage = () => {
     localStorage.setItem("cartItems", JSON.stringify(cartItems));
   }, [cartItems]);
 
-  useEffect(() => {
-    const rawScannerServer = localStorage.getItem("scannerServer");
-    if (!rawScannerServer) return;
-    try {
-      setScannerServer(JSON.parse(rawScannerServer));
-    } catch {
-      setScannerServer(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isDesktopApp()) return undefined;
-    let cancelled = false;
-    desktopInvoke("desktop_health")
-      .then((health) => {
-        if (cancelled || !health?.scanner_server) return;
-        localStorage.setItem(
-          "scannerServer",
-          JSON.stringify(health.scanner_server)
-        );
-        setScannerServer(health.scanner_server);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return undefined;
-
-    let cancelled = false;
-    const pollScannerStatus = async () => {
-      try {
-        const response = await fetch("/api/scanner/status/", {
-          method: "GET",
-          headers: {
-            Authorization: `Token ${token}`,
-          },
-        });
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        const connected = Boolean(data.connected);
-        setScannerConnected(connected);
-        if (connected) {
-          setShowScannerPanel(false);
-          setScannerStatus("Telefon ulandi");
-        } else {
-          setShowScannerPanel(true);
-        }
-      } catch {
-        if (!cancelled) setScannerConnected(false);
-      }
-    };
-
-    pollScannerStatus();
-    const intervalId = window.setInterval(pollScannerStatus, 2500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
   // Example search handler (replace with real logic as needed)
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
     // Add filtering logic here if needed
+  };
+
+  const handleBarcodeSubmit = (e) => {
+    e.preventDefault();
+    const code = barcodeInput.trim();
+    if (!code) return;
+    
+    // find product by barcode (we already have findProductByBarcode)
+    const product = findProductByBarcode(code);
+    if (!product) {
+      showStockError(`Barcode topilmadi: ${code}`);
+      setBarcodeInput("");
+      return;
+    }
+    
+    addToCart(product);
+    setBarcodeInput(""); // reset for next scan
   };
 
   const addToCart = (product) => {
@@ -250,67 +195,6 @@ const SellPage = () => {
         product.barcodes.some((productBarcode) => productBarcode === code)
     );
   };
-
-  const handleScannedBarcode = (barcode) => {
-    const product = findProductByBarcode(barcode);
-    if (!product) {
-      showStockError(`Barcode topilmadi: ${barcode}`);
-      return;
-    }
-    addToCart(product);
-    setScannerStatus(`${product.name} savatchaga qo'shildi`);
-  };
-
-  const getScannerUrl = () => {
-    const token = localStorage.getItem("token");
-    if (!scannerServer?.base_url || !token) return "";
-    return `${scannerServer.base_url}/scanner?token=${encodeURIComponent(token)}`;
-  };
-
-  const copyScannerUrl = async () => {
-    const scannerUrl = getScannerUrl();
-    if (!scannerUrl) return;
-    try {
-      await navigator.clipboard.writeText(scannerUrl);
-      setScannerStatus("Telefon skaner havolasi nusxalandi");
-    } catch {
-      setScannerStatus(scannerUrl);
-    }
-  };
-
-  const scannerUrl = getScannerUrl();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!scannerUrl || scannerConnected || !showScannerPanel) {
-      setScannerQrSvg("");
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    QRCode.toString(scannerUrl, {
-      type: "svg",
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 180,
-      color: {
-        dark: "#041421",
-        light: "#ffffff",
-      },
-    })
-      .then((svg) => {
-        if (!cancelled) setScannerQrSvg(svg);
-      })
-      .catch(() => {
-        if (!cancelled) setScannerQrSvg("");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [scannerUrl, scannerConnected, showScannerPanel]);
 
   const removeFromCart = (itemId) => {
     setCartItems(cartItems.filter((item) => item.id !== itemId));
@@ -387,64 +271,6 @@ const SellPage = () => {
     }
   }, [searchTerm, products, activeCategory]);
 
-  useEffect(() => {
-    const code = searchTerm.trim();
-    if (!code) return;
-    const match = products.find((product) =>
-      Array.isArray(product.barcodes) && product.barcodes.includes(code)
-    );
-    if (match) {
-      addToCart(match);
-      setSearchTerm("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, products]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token || products.length === 0) return undefined;
-
-    let cancelled = false;
-    const pollScannerEvents = async () => {
-      try {
-        const response = await fetch("/api/scanner/events/latest/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Token ${token}`,
-          },
-          body: JSON.stringify({
-            last_event_id: lastScannerEventIdRef.current,
-          }),
-        });
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (!data.event) {
-          scannerSyncedRef.current = true;
-          return;
-        }
-
-        lastScannerEventIdRef.current = Number(data.event.id || 0);
-        if (!scannerSyncedRef.current) {
-          scannerSyncedRef.current = true;
-          return;
-        }
-
-        handleScannedBarcode(data.event.barcode);
-      } catch {
-        // Scanner polling is optional; keep selling usable if it fails.
-      }
-    };
-
-    pollScannerEvents();
-    const intervalId = window.setInterval(pollScannerEvents, 900);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, cartItems]);
-
   // Filter products by active category and search term
   const filteredProducts = products.filter(
     (product) =>
@@ -465,6 +291,10 @@ const SellPage = () => {
   };
 
   const handlePay = async (override = {}) => {
+    // If override is an event object (from onClick), ignore it
+    if (override && override.nativeEvent) {
+      override = {};
+    }
     if (cartItems.length === 0) return;
     setLoading(true);
     setShowError(false);
@@ -514,7 +344,8 @@ const SellPage = () => {
         setShowError(true);
       }
     } catch (e) {
-      setErrorMessage("Tarmoq xatosi yoki server javob bermadi.");
+      console.error(e);
+      setErrorMessage(`Tarmoq xatosi yoki server javob bermadi. Detailed error: ${e.message}`);
       setShowError(true);
     }
     setLoading(false);
@@ -683,48 +514,43 @@ const SellPage = () => {
               />
             </div>
           </div>
-          <div className="sell-page-scanner-panel">
-            <div>
-              <div className="sell-page-scanner-title">Telefon skaner</div>
+          <form 
+            className="sell-page-scanner-panel" 
+            onSubmit={handleBarcodeSubmit}
+          >
+            <div style={{ flex: 1 }}>
+              <div className="sell-page-scanner-title">Barcode Skaner</div>
               <div className="sell-page-scanner-subtitle">
-                {scannerConnected
-                  ? "Telefon ulangan. Barcode skaner tayyor."
-                  : scannerUrl
-                  ? "Telefonni bir xil Wi-Fi tarmog'iga ulang va havolani oching."
-                  : "Desktop skaner serveri hali topilmadi."}
+                Hardware skanerni ulab mahsulotni skanerlang yoki shtrix kodni qo'lda yozib Enter bosing.
               </div>
-              {scannerQrSvg && (
-                <div className="sell-page-scanner-qr-row">
-                  <div
-                    className="sell-page-scanner-qr"
-                    dangerouslySetInnerHTML={{ __html: scannerQrSvg }}
-                  />
-                  <div className="sell-page-scanner-url">{scannerUrl}</div>
-                </div>
-              )}
-              {scannerStatus && (
-                <div className="sell-page-scanner-status">{scannerStatus}</div>
-              )}
+              <input
+                type="text"
+                placeholder="Shtrix kodni o'qiting (masalan: 123456789)..."
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  marginTop: '12px',
+                  fontSize: '16px',
+                  outline: 'none',
+                  background: isLightTheme ? "#fff" : "#23273a",
+                  color: isLightTheme ? "#111827" : "#fff",
+                }}
+              />
             </div>
             <div className="sell-page-scanner-actions">
               <button
-                type="button"
+                type="submit"
                 className="sell-page-scanner-btn"
-                disabled={!scannerUrl || scannerConnected}
-                onClick={() => setShowScannerPanel((value) => !value)}
               >
-                {scannerConnected ? "Ulangan" : showScannerPanel ? "Yopish" : "QR"}
-              </button>
-              <button
-                type="button"
-                className="sell-page-scanner-btn secondary"
-                disabled={!scannerUrl || scannerConnected}
-                onClick={copyScannerUrl}
-              >
-                Nusxa
+                Izlash
               </button>
             </div>
-          </div>
+          </form>
           <div className="sell-page-product-selection">
             <div className="sell-page-category-bar">
               {categories.map((category, index) => (

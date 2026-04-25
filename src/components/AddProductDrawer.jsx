@@ -344,7 +344,27 @@ const AddProductModal = ({
                       {cat.name}
                     </option>
                   ))}
+                  <option value="new">+ Yangi qo'shish...</option>
                 </select>
+                {form.category_id === "new" && (
+                  <input
+                    type="text"
+                    placeholder="Yangi kategoriya nomi"
+                    value={form.new_category || ""}
+                    onChange={(e) => onFieldChange("new_category", e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      border: "1.5px solid #2196f3",
+                      fontSize: 15,
+                      background: "#fff",
+                      color: "#222",
+                      marginTop: 8,
+                    }}
+                    autoFocus
+                  />
+                )}
               </div>
               <div style={{ textAlign: "left" }}>
                 <label
@@ -502,40 +522,13 @@ const AddProductModal = ({
                     color: "var(--modal-label-color, #fff)",
                   }}
                 >
-                  Batch
-                </label>
-                <input
-                  type="text"
-                  value={form.batch_number || ""}
-                  onChange={(e) => onFieldChange("batch_number", e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    border: "1.5px solid #e0e0e0",
-                    fontSize: 15,
-                    background: "#f5f6fa",
-                    color: "#222",
-                    marginTop: 2,
-                  }}
-                />
-              </div>
-              <div style={{ textAlign: "left" }}>
-                <label
-                  style={{
-                    fontWeight: 600,
-                    fontSize: 15,
-                    marginBottom: 6,
-                    display: "block",
-                    color: "var(--modal-label-color, #fff)",
-                  }}
-                >
-                  Yaroqlilik sanasi
+                  Yaroqlilik sanasi (ixtiyoriy)
                 </label>
                 <input
                   type="date"
                   value={form.expiry_date || ""}
                   onChange={(e) => onFieldChange("expiry_date", e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
