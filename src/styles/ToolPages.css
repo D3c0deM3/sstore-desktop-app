@@ -1,6 +1,7 @@
 .tool-page {
-  min-height: 100vh;
+  height: 100vh;
   padding: 28px;
+  overflow-y: auto;
   color: var(--color-text-primary);
   background: var(--color-bg-primary);
 }
@@ -194,6 +195,317 @@
   color: var(--color-success);
 }
 
+.reports-page .tool-panel {
+  margin-bottom: 18px;
+}
+
+.reports-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.reports-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.reports-panel-header h2 {
+  margin-bottom: 4px;
+}
+
+.report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-card-grid div {
+  min-height: 72px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-bg-tertiary);
+}
+
+.report-card-grid span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.report-card-grid strong {
+  font-size: 18px;
+}
+
+.tool-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.reports-history-panel .tool-table-wrap {
+  max-height: min(520px, calc(100vh - 220px));
+  overflow: auto;
+}
+
+.reports-history-panel .tool-table {
+  min-width: 820px;
+}
+
+.tool-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
+.tool-table th,
+.tool-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tool-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tool-table td {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.pressable-table-row {
+  cursor: pointer;
+  transition: background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.pressable-table-row:hover,
+.pressable-table-row:focus {
+  background: var(--color-hover);
+  outline: none;
+}
+
+.pressable-table-row:focus {
+  box-shadow: inset 3px 0 0 var(--color-active);
+}
+
+.product-summary-cell {
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+}
+
+.payment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-badge.cash {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.payment-badge.card {
+  color: #047857;
+  background: #ccfbf1;
+  border-color: #99f6e4;
+}
+
+.payment-badge.transfer {
+  color: #0f766e;
+  background: #cffafe;
+  border-color: #a5f3fc;
+}
+
+.payment-badge.mixed {
+  color: #3f6212;
+  background: #ecfccb;
+  border-color: #d9f99d;
+}
+
+.payment-badge.debt {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #bfdbfe;
+}
+
+.report-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.report-drawer {
+  width: min(460px, 100vw);
+  height: 100vh;
+  overflow-y: auto;
+  padding: 22px;
+  background: var(--color-bg-primary);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -18px 0 36px rgba(15, 23, 42, 0.2);
+}
+
+.report-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.report-drawer-header span,
+.report-drawer-section h3,
+.report-drawer-summary span,
+.report-drawer-totals span,
+.report-drawer-payment-list span {
+  color: var(--color-text-secondary);
+}
+
+.report-drawer-header h2 {
+  margin: 4px 0;
+  font-size: 22px;
+}
+
+.report-drawer-header p {
+  color: var(--color-text-secondary);
+}
+
+.report-drawer-header button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.report-drawer-summary,
+.report-drawer-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.report-drawer-summary div,
+.report-drawer-totals div,
+.report-drawer-item {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+}
+
+.report-drawer-summary span,
+.report-drawer-totals span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.report-drawer-section {
+  margin-top: 20px;
+}
+
+.report-drawer-section h3 {
+  margin-bottom: 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.report-drawer-items {
+  display: grid;
+  gap: 10px;
+}
+
+.report-drawer-item-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.report-drawer-item-main span {
+  color: var(--color-text-secondary);
+  text-align: right;
+  font-weight: 700;
+}
+
+.report-drawer-item-grid,
+.report-drawer-payment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-drawer-item-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.report-drawer-payment-list {
+  margin-top: 12px;
+}
+
+.report-drawer-payment-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-drawer-note {
+  margin-top: 10px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-empty-cell {
+  padding: 28px 12px !important;
+  color: var(--color-text-secondary) !important;
+  text-align: center !important;
+}
+
+.positive-text {
+  color: var(--color-success) !important;
+}
+
+.danger-text {
+  color: var(--color-danger) !important;
+}
+
 .calculator-result {
   align-self: start;
 }
@@ -242,7 +554,12 @@
 
   .tool-grid.two-columns,
   .advice-grid,
-  .tool-list.compact {
+  .tool-list.compact,
+  .reports-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-card-grid {
     grid-template-columns: 1fr;
   }
 }

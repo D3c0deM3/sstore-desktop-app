@@ -8,6 +8,7 @@ import BulkDeleteModal from "../components/BulkDeleteModal";
 import EditProductModal from "../components/EditProductModal";
 import AddProductModal from "../components/AddProductDrawer";
 import CategoryManagementModal from "../components/CategoryManagementModal";
+import ProductImagePlaceholder from "../components/ProductImagePlaceholder";
 import { resolveMediaUrl } from "../utils/imageSource";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -49,7 +50,7 @@ const ProductsPage = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [addProductForm, setAddProductForm] = useState({
-    category_id: categories.length > 0 ? categories[0].id : "",
+    category_id: categories.length > 0 ? categories[0].id : "new",
     new_category: "",
     name: "",
     quantity: "",
@@ -171,12 +172,10 @@ const ProductsPage = () => {
       setCategories(safeCategories);
 
       // Set default category_id to the ID of the first category
-      if (safeCategories.length > 0) {
-        setAddProductForm((prev) => ({
-          ...prev,
-          category_id: safeCategories[0].id,
-        }));
-      }
+      setAddProductForm((prev) => ({
+        ...prev,
+        category_id: safeCategories.length > 0 ? safeCategories[0].id : "new",
+      }));
     } catch (err) {
       setCategories([]);
     }
@@ -190,7 +189,7 @@ const ProductsPage = () => {
   };
 
   const handleCloseAddProduct = () => {
-    const defaultCategoryId = categories.length > 0 ? categories[0].id : "";
+    const defaultCategoryId = categories.length > 0 ? categories[0].id : "new";
     setShowAddProduct(false);
     setAddProductForm({
       category_id: defaultCategoryId,
@@ -227,13 +226,29 @@ const ProductsPage = () => {
       return;
     }
 
+    if (
+      addProductForm.category_id === "new" &&
+      !String(addProductForm.new_category || "").trim()
+    ) {
+      setAddProductError("Iltimos, yangi kategoriya nomini kiriting.");
+      setAddProductLoading(false);
+      return;
+    }
+
+    if (addProductForm.category_id !== "new" && !addProductForm.category_id) {
+      setAddProductError("Iltimos, kategoriyani tanlang.");
+      setAddProductLoading(false);
+      return;
+    }
+
     try {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("Token not found");
 
       let categoryIdToUse = addProductForm.category_id;
 
-      if (addProductForm.category_id === "new" && addProductForm.new_category) {
+      if (addProductForm.category_id === "new") {
+        const newCategoryName = String(addProductForm.new_category || "").trim();
         // Create new category first
         const catRes = await fetch(`${apiBaseUrl}/api/categories/create/`, {
           method: "POST",
@@ -241,7 +256,7 @@ const ProductsPage = () => {
             "Content-Type": "application/json",
             Authorization: `Token ${token}`,
           },
-          body: JSON.stringify({ name: addProductForm.new_category }),
+          body: JSON.stringify({ name: newCategoryName }),
         });
         if (!catRes.ok) throw new Error("Yangi kategoriyani yaratib bo'lmadi");
         
@@ -254,8 +269,9 @@ const ProductsPage = () => {
           },
         });
         if (!catsRes.ok) throw new Error("Kategoriyalarni yangilab bo'lmadi");
-        const listCats = await catsRes.json();
-        const foundCat = listCats.find(c => c.name === addProductForm.new_category);
+        const listCats = asArray(await catsRes.json());
+        setCategories(listCats);
+        const foundCat = listCats.find(c => c.name === newCategoryName);
         if (!foundCat) throw new Error("Yangi kategoriya ro'yxatdan topilmadi");
         
         categoryIdToUse = foundCat.id;
@@ -355,7 +371,7 @@ const ProductsPage = () => {
       await fetchProducts();
       // Clear the add product form fields
       setAddProductForm({
-        category_id: categories.length > 0 ? categories[0].id : "",
+        category_id: categories.length > 0 ? categories[0].id : "new",
         new_category: "",
         name: "",
         quantity: "",
@@ -560,13 +576,19 @@ const ProductsPage = () => {
         );
         if (matched) matchedCategoryId = String(matched.id);
       }
+      const primaryBarcode =
+        data.barcode || (data.barcodes && data.barcodes[0]) || "";
       setEditModal({
         show: true,
         loading: false,
-        initial: data,
+        initial: {
+          ...data,
+          barcode: primaryBarcode,
+        },
         form: {
           ...data,
           category_id: matchedCategoryId || String(data.category_id),
+          barcode: primaryBarcode,
           image_url: data.image_url || data.image || "", // always set image_url for edit
         },
         error: null,
@@ -596,6 +618,8 @@ const ProductsPage = () => {
       "min_quantity",
       "quantity_type",
       "price_per_quantity",
+      "cost_per_quantity",
+      "barcode",
       "status",
     ];
     const changed = fieldsToCheck.some((key) => {
@@ -608,6 +632,9 @@ const ProductsPage = () => {
       } else if (key === "price_per_quantity") {
         formValue = parseFloat(formValue);
         initialValue = parseFloat(initialValue);
+      } else if (key === "cost_per_quantity") {
+        formValue = Number(formValue || 0);
+        initialValue = Number(initialValue || 0);
       } else if (
         typeof formValue === "string" &&
         typeof initialValue === "string"
@@ -645,6 +672,11 @@ const ProductsPage = () => {
         "price_per_quantity",
         parseFloat(editModal.form.price_per_quantity).toFixed(2)
       );
+      formData.append(
+        "cost_per_quantity",
+        Number(editModal.form.cost_per_quantity || 0).toFixed(2)
+      );
+      formData.append("barcode", editModal.form.barcode || "");
       formData.append("status", editModal.form.status);
       formData.append("id", editModal.form.id);
       // If a new image file is selected, send it; otherwise, send the current image url from the API (image_url)
@@ -893,11 +925,24 @@ const ProductsPage = () => {
 
   // Helper to format date as DD/MM/YYYY
   const formatDate = (dateString) => {
+    if (!dateString) return "-";
     const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return String(dateString);
     const day = String(d.getDate()).padStart(2, "0");
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
+  };
+
+  const formatMoney = (value) =>
+    `${Number(value || 0).toLocaleString("uz-UZ")} UZS`;
+
+  const formatQuantity = (value, unit = "") => {
+    const numericValue = Number(value || 0);
+    const formattedValue = Number.isInteger(numericValue)
+      ? numericValue.toLocaleString("uz-UZ")
+      : numericValue.toLocaleString("uz-UZ", { maximumFractionDigits: 3 });
+    return `${formattedValue}${unit ? ` ${unit}` : ""}`;
   };
 
   // Add handler to open refill modal
@@ -933,6 +978,16 @@ const ProductsPage = () => {
       }));
       return;
     }
+    const refillUnitCost = Number(refillModal.price);
+    const refillQuantity = Number(refillModal.quantity);
+    if (refillUnitCost < 0 || refillQuantity <= 0) {
+      setRefillModal((prev) => ({
+        ...prev,
+        error: "Tannarx va miqdorni to'g'ri kiriting.",
+      }));
+      return;
+    }
+    const refillTotalCost = refillUnitCost * refillQuantity;
     setRefillModal((prev) => ({ ...prev, loading: true, error: "" }));
     const token = localStorage.getItem("token");
     if (!token) {
@@ -952,8 +1007,8 @@ const ProductsPage = () => {
         },
         body: JSON.stringify({
           product_id: refillModal.product.id,
-          price: Number(refillModal.price),
-          quantity: Number(refillModal.quantity),
+          price: refillTotalCost,
+          quantity: refillQuantity,
         }),
       });
       if (res.status === 200) {
@@ -1117,7 +1172,7 @@ const ProductsPage = () => {
                     theme === "light" ? "var(--color-text-primary)" : "#fff",
                 }}
               >
-                Narx
+                Tannarx
               </label>
               <input
                 type="number"
@@ -1134,9 +1189,23 @@ const ProductsPage = () => {
                   border: "1px solid #cbd5e1",
                   fontSize: 16,
                 }}
-                placeholder="Narx"
+                placeholder="1 kg/dona/litr uchun tannarx"
                 min={0}
               />
+              <div
+                style={{
+                  color: theme === "light" ? "#64748b" : "#cbd5e1",
+                  fontSize: 13,
+                  marginTop: 4,
+                }}
+              >
+                Jami xarid:{" "}
+                {(
+                  Number(refillModal.price || 0) *
+                  Number(refillModal.quantity || 0)
+                ).toLocaleString()}{" "}
+                UZS
+              </div>
             </div>
             <div style={{ marginBottom: 18 }}>
               <label
@@ -1482,17 +1551,18 @@ const ProductsPage = () => {
                         />
                       </td>
                       <td className="product-name">
-                        {imageSrc && (
+                        {imageSrc ? (
                           <img
                             src={imageSrc}
                             alt={product.name}
                             className="product-table-thumb"
                           />
+                        ) : (
+                          <ProductImagePlaceholder className="product-table-thumb" />
                         )}
                         <span
                           style={{
-                            marginLeft:
-                              imageSrc ? 14 : 0,
+                            marginLeft: 14,
                             verticalAlign: "middle",
                           }}
                         >
@@ -1689,7 +1759,7 @@ const ProductsPage = () => {
           drawerOpen ? " open" : ""
         } ${theme}`}
         style={{
-          right: drawerOpen ? 0 : "-480px",
+          right: drawerOpen ? 0 : "-640px",
           transition: "right 0.35s cubic-bezier(.4,0,.2,1)",
           zIndex: 1002,
         }}
@@ -1709,162 +1779,235 @@ const ProductsPage = () => {
         ) : drawerError ? (
           <div className="drawer-error">{drawerError}</div>
         ) : drawerData ? (
-          <div className="drawer-content">
-            <div className="drawer-header">
-              <div className="drawer-image-wrapper">
-                {resolveMediaUrl(
-                  drawerData.product.image_url || drawerData.product.image
-                ) ? (
-                  <img
-                    src={resolveMediaUrl(
-                      drawerData.product.image_url || drawerData.product.image
+          (() => {
+            const product = drawerData.product || {};
+            const quantityType = product.quantity_type || "";
+            const quantity = Number(product.quantity || 0);
+            const minQuantity = Number(product.min_quantity || 0);
+            const sellPrice = Number(product.price_per_quantity || 0);
+            const costPrice = Number(product.cost_per_quantity || 0);
+            const statusInfo = getStatusInfo(quantity, minQuantity || 50);
+            const totalSold = Number(drawerData.total_sold || 0);
+            const totalBought = Number(drawerData.total_bought || 0);
+            const soldQuantity = Number(product.total_subtracted || 0);
+            const stockCostValue = quantity * costPrice;
+            const stockSellValue = quantity * sellPrice;
+            const unitProfit = sellPrice - costPrice;
+            const margin = sellPrice > 0 ? (unitProfit / sellPrice) * 100 : 0;
+            const barcodes = product.barcodes || [];
+            const imageSrc = resolveMediaUrl(product.image_url || product.image);
+
+            return (
+              <div className="drawer-content">
+                <div className="drawer-header">
+                  <div className="drawer-image-wrapper">
+                    {imageSrc ? (
+                      <img
+                        src={imageSrc}
+                        alt={product.name}
+                        className="drawer-product-image"
+                      />
+                    ) : (
+                      <ProductImagePlaceholder className="drawer-image-placeholder" />
                     )}
-                    alt={drawerData.product.name}
-                    className="drawer-product-image"
-                  />
-                ) : (
-                  <div className="drawer-image-placeholder">No Image</div>
-                )}
-              </div>
-              <div className="drawer-title-section">
-                <h2 className="drawer-product-name">
-                  {drawerData.product.name}
-                </h2>
-                <span className="drawer-category">
-                  {drawerData.product.category_name || "Boshqa"}
-                </span>
-                <span
-                  className={`drawer-status ${
-                    getStatusInfo(
-                      drawerData.product.quantity,
-                      Number(drawerData.product.min_quantity || 50)
-                    ).class
-                  }`}
-                >
-                  {getStatusInfo(
-                    drawerData.product.quantity,
-                    Number(drawerData.product.min_quantity || 50)
-                  ).text}
-                </span>
-              </div>
-            </div>
-            <div className="drawer-info-grid">
-              <div>
-                <span className="drawer-label">Qoldiq:</span>
-                <span className="drawer-value">
-                  {drawerData.product.quantity}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Narx:</span>
-                <span className="drawer-value">
-                  {parseFloat(
-                    drawerData.product.price_per_quantity
-                  ).toLocaleString()}{" "}
-                  UZS
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Status:</span>
-                <span className="drawer-value">
-                  {drawerData.product.status === "available"
-                    ? "Bor"
-                    : drawerData.product.status === "few"
-                    ? "Kam qolgan"
-                    : "Mavjud emas"}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Turi:</span>
-                <span className="drawer-value">
-                  {drawerData.product.quantity_type}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Minimal qoldiq:</span>
-                <span className="drawer-value">
-                  {drawerData.product.min_quantity}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Barcode:</span>
-                <span className="drawer-value">
-                  {(drawerData.product.barcodes || []).join(", ") || "-"}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Yaqin yaroqlilik:</span>
-                <span className="drawer-value">
-                  {drawerData.product.nearest_expiry_date || "-"}
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Qo'shilgan sana:</span>
-                <span className="drawer-value">
-                  {formatDate(drawerData.product.date)}
-                </span>
-              </div>
-            </div>
-            <div className="drawer-totals">
-              <div>
-                <span className="drawer-label">Jami sotilgan:</span>
-                <span className="drawer-value">
-                  {drawerData.total_sold
-                    ? parseFloat(drawerData.total_sold).toLocaleString()
-                    : 0}{" "}
-                  UZS
-                </span>
-              </div>
-              <div>
-                <span className="drawer-label">Jami xarid qilingan:</span>
-                <span className="drawer-value">
-                  {drawerData.total_bought
-                    ? parseFloat(drawerData.total_bought).toLocaleString()
-                    : 0}{" "}
-                  UZS
-                </span>
-              </div>
-            </div>
-            <div className="drawer-history-section">
-              <h3>So'nggi sotuvlar</h3>
-              {drawerData.product_sold && drawerData.product_sold.length > 0 ? (
-                <ul className="drawer-history-list">
-                  {drawerData.product_sold.map((sale) => (
-                    <li key={sale.id} className="drawer-history-item">
-                      <span className="drawer-history-date">
-                        {formatDate(sale.date)}
+                  </div>
+                  <div className="drawer-title-section">
+                    <div className="drawer-title-row">
+                      <div>
+                        <h2 className="drawer-product-name">
+                          {product.name}
+                        </h2>
+                        <span className="drawer-category">
+                          {product.category_name || "Boshqa"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="drawer-edit-btn"
+                        onClick={() => handleEditProduct(product.id)}
+                      >
+                        Tahrirlash
+                      </button>
+                    </div>
+                    <div className="drawer-badges">
+                      <span className={`drawer-status ${statusInfo.class}`}>
+                        {statusInfo.text}
                       </span>
-                      <span className="drawer-history-qty">
-                        {sale.quantity} x{" "}
-                        {parseFloat(sale.price).toLocaleString()} UZS
+                      <span className="drawer-muted-pill">
+                        {quantityType || "turi yo'q"}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="drawer-history-empty">Sotuvlar yo'q</div>
-              )}
-              <h3>So'nggi xaridlar</h3>
-              {drawerData.product_bought &&
-              drawerData.product_bought.length > 0 ? (
-                <ul className="drawer-history-list">
-                  {drawerData.product_bought.map((buy) => (
-                    <li key={buy.id} className="drawer-history-item">
-                      <span className="drawer-history-date">
-                        {formatDate(buy.date)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="drawer-metric-grid">
+                  <div className="drawer-metric-card">
+                    <span>Qoldiq</span>
+                    <strong>{formatQuantity(quantity, quantityType)}</strong>
+                  </div>
+                  <div className="drawer-metric-card">
+                    <span>Minimal qoldiq</span>
+                    <strong>{formatQuantity(minQuantity, quantityType)}</strong>
+                  </div>
+                  <div className="drawer-metric-card">
+                    <span>Sotuv narxi</span>
+                    <strong>{formatMoney(sellPrice)}</strong>
+                  </div>
+                  <div className="drawer-metric-card">
+                    <span>Kelgan narx / tannarx</span>
+                    <strong>{formatMoney(costPrice)}</strong>
+                  </div>
+                </div>
+
+                <div className="drawer-section">
+                  <h3>Moliyaviy ko'rsatkichlar</h3>
+                  <div className="drawer-info-grid">
+                    <div>
+                      <span className="drawer-label">Birlik foyda</span>
+                      <span className="drawer-value">
+                        {formatMoney(unitProfit)}
                       </span>
-                      <span className="drawer-history-qty">
-                        {buy.quantity} x{" "}
-                        {parseFloat(buy.price).toLocaleString()} UZS
+                    </div>
+                    <div>
+                      <span className="drawer-label">Marja</span>
+                      <span className="drawer-value">
+                        {margin.toLocaleString("uz-UZ", {
+                          maximumFractionDigits: 1,
+                        })}
+                        %
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="drawer-history-empty">Xaridlar yo'q</div>
-              )}
-            </div>
-          </div>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Ombordagi tannarx</span>
+                      <span className="drawer-value">
+                        {formatMoney(stockCostValue)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Ombordagi sotuv qiymati</span>
+                      <span className="drawer-value">
+                        {formatMoney(stockSellValue)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Jami sotuv</span>
+                      <span className="drawer-value">
+                        {formatMoney(totalSold)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Jami xarid</span>
+                      <span className="drawer-value">
+                        {formatMoney(totalBought)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="drawer-section">
+                  <h3>Mahsulot ma'lumotlari</h3>
+                  <div className="drawer-info-grid">
+                    <div>
+                      <span className="drawer-label">Kategoriya</span>
+                      <span className="drawer-value">
+                        {product.category_name || "-"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Status</span>
+                      <span className="drawer-value">{statusInfo.text}</span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Barcode</span>
+                      <span className="drawer-value drawer-code-value">
+                        {barcodes.length ? barcodes.join(", ") : "-"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Yaqin yaroqlilik</span>
+                      <span className="drawer-value">
+                        {product.nearest_expiry_date || "-"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Qo'shilgan sana</span>
+                      <span className="drawer-value">
+                        {formatDate(product.date)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="drawer-label">Jami sotilgan miqdor</span>
+                      <span className="drawer-value">
+                        {formatQuantity(soldQuantity, quantityType)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="drawer-history-section">
+                  <div className="drawer-history-column">
+                    <h3>So'nggi sotuvlar</h3>
+                    {drawerData.product_sold &&
+                    drawerData.product_sold.length > 0 ? (
+                      <ul className="drawer-history-list">
+                        {drawerData.product_sold.slice(0, 12).map((sale) => {
+                          const saleQty = Number(sale.quantity || 0);
+                          const saleTotal = Number(sale.price || 0);
+                          const saleUnit = saleQty > 0 ? saleTotal / saleQty : 0;
+                          return (
+                            <li key={sale.id} className="drawer-history-item">
+                              <div>
+                                <span className="drawer-history-date">
+                                  {formatDate(sale.date)}
+                                </span>
+                                <span className="drawer-history-sub">
+                                  {formatQuantity(saleQty, quantityType)} x{" "}
+                                  {formatMoney(saleUnit)}
+                                </span>
+                              </div>
+                              <strong>{formatMoney(saleTotal)}</strong>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="drawer-history-empty">Sotuvlar yo'q</div>
+                    )}
+                  </div>
+
+                  <div className="drawer-history-column">
+                    <h3>So'nggi xaridlar</h3>
+                    {drawerData.product_bought &&
+                    drawerData.product_bought.length > 0 ? (
+                      <ul className="drawer-history-list">
+                        {drawerData.product_bought.slice(0, 12).map((buy) => {
+                          const buyQty = Number(buy.quantity || 0);
+                          const buyTotal = Number(buy.price || 0);
+                          const buyUnit = buyQty > 0 ? buyTotal / buyQty : 0;
+                          return (
+                            <li key={buy.id} className="drawer-history-item">
+                              <div>
+                                <span className="drawer-history-date">
+                                  {formatDate(buy.date)}
+                                </span>
+                                <span className="drawer-history-sub">
+                                  {formatQuantity(buyQty, quantityType)} x{" "}
+                                  {formatMoney(buyUnit)}
+                                </span>
+                              </div>
+                              <strong>{formatMoney(buyTotal)}</strong>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <div className="drawer-history-empty">Xaridlar yo'q</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()
         ) : null}
       </div>
       {/* Drawer overlay */}

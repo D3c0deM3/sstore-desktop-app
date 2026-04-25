@@ -11,7 +11,7 @@ use tauri::Manager;
 use time::{Month, OffsetDateTime};
 
 const DATABASE_FILE_NAME: &str = "sstore.sqlite";
-const CURRENT_SCHEMA_VERSION: i64 = 4;
+const CURRENT_SCHEMA_VERSION: i64 = 7;
 static SCANNER_SERVER: OnceLock<ScannerServerInfo> = OnceLock::new();
 
 #[derive(Serialize)]
@@ -50,6 +50,13 @@ struct MarketSession {
     id: i64,
 }
 
+#[derive(Debug, Clone)]
+struct StockBatchAllocation {
+    batch_id: i64,
+    quantity: f64,
+    cost_per_quantity: f64,
+}
+
 pub fn ensure_database(app: &tauri::AppHandle) -> Result<DesktopHealth, String> {
     let db_path = database_path(app)?;
     let conn = open_connection(&db_path)?;
@@ -77,7 +84,9 @@ pub fn handle_api(app: &tauri::AppHandle, request: ApiRequest) -> Result<ApiResp
     let body = request.body.unwrap_or_else(|| json!({}));
 
     let response = match (method.as_str(), path.as_str()) {
-        ("GET", "/api/check/") | ("GET", "/api/check") => ok(json!({"message": "Desktop API is running"})),
+        ("GET", "/api/check/") | ("GET", "/api/check") => {
+            ok(json!({"message": "Desktop API is running"}))
+        }
         ("POST", "/api/signup/") | ("POST", "/api/signup") => signup(&conn, &body)?,
         ("POST", "/api/login/") | ("POST", "/api/login") => login(&conn, &body)?,
         ("POST", "/api/logout/") | ("POST", "/api/logout") => {
@@ -85,8 +94,11 @@ pub fn handle_api(app: &tauri::AppHandle, request: ApiRequest) -> Result<ApiResp
                 Ok(market) => market,
                 Err(message) => return Ok(error(401, &message)),
             };
-            conn.execute("UPDATE markets SET token = NULL WHERE id = ?1", params![market.id])
-                .map_err(|err| err.to_string())?;
+            conn.execute(
+                "UPDATE markets SET token = NULL WHERE id = ?1",
+                params![market.id],
+            )
+            .map_err(|err| err.to_string())?;
             ok(json!({"message": "Successfully logged out"}))
         }
         _ => {
@@ -128,33 +140,56 @@ fn route_authenticated(
         ("GET", "/api/categories/products/") | ("GET", "/api/categories/products") => {
             categories_with_products(conn, market)
         }
-        ("POST", "/api/market/plan/") | ("POST", "/api/market/plan") => update_market_plan(conn, market, body),
+        ("POST", "/api/market/plan/") | ("POST", "/api/market/plan") => {
+            update_market_plan(conn, market, body)
+        }
         ("GET", "/api/products/") | ("GET", "/api/products") => products_index(conn, market),
-        ("GET", "/api/products/low-stock/") | ("GET", "/api/products/low-stock") => low_stock_products(conn, market),
-        ("POST", "/api/products/barcode/") | ("POST", "/api/products/barcode") => product_by_barcode(conn, market, body),
-        ("POST", "/api/scanner/events/latest/") | ("POST", "/api/scanner/events/latest") => scanner_latest_event(conn, market, body),
-        ("GET", "/api/scanner/status/") | ("GET", "/api/scanner/status") => scanner_status(conn, market),
+        ("GET", "/api/products/low-stock/") | ("GET", "/api/products/low-stock") => {
+            low_stock_products(conn, market)
+        }
+        ("POST", "/api/products/barcode/") | ("POST", "/api/products/barcode") => {
+            product_by_barcode(conn, market, body)
+        }
+        ("POST", "/api/scanner/events/latest/") | ("POST", "/api/scanner/events/latest") => {
+            scanner_latest_event(conn, market, body)
+        }
+        ("GET", "/api/scanner/status/") | ("GET", "/api/scanner/status") => {
+            scanner_status(conn, market)
+        }
         ("POST", "/api/products/create/") | ("POST", "/api/products/create") => {
             product_create(conn, market, body)
         }
-        ("DELETE", "/api/products/delete/several/") | ("DELETE", "/api/products/delete/several") => {
-            product_delete_several(conn, market, body)
+        ("DELETE", "/api/products/delete/several/")
+        | ("DELETE", "/api/products/delete/several") => product_delete_several(conn, market, body),
+        ("GET", "/api/products/report/") | ("GET", "/api/products/report") => {
+            products_report(conn, market)
         }
-        ("GET", "/api/products/report/") | ("GET", "/api/products/report") => products_report(conn, market),
-        ("GET", "/api/reports/summary/") | ("GET", "/api/reports/summary") => reports_summary(conn, market),
+        ("GET", "/api/reports/summary/") | ("GET", "/api/reports/summary") => {
+            reports_summary(conn, market)
+        }
         ("GET", "/api/sales/") | ("GET", "/api/sales") => sales_index(conn, market),
         ("POST", "/api/sell/") | ("POST", "/api/sell") => save_product_updates(conn, market, body),
-        ("POST", "/api/returns/") | ("POST", "/api/returns") => return_sale_item(conn, market, body),
+        ("POST", "/api/returns/") | ("POST", "/api/returns") => {
+            return_sale_item(conn, market, body)
+        }
         ("POST", "/api/buy/") | ("POST", "/api/buy") => save_bought_products(conn, market, body),
         ("GET", "/api/suppliers/") | ("GET", "/api/suppliers") => suppliers_index(conn, market),
-        ("POST", "/api/suppliers/create/") | ("POST", "/api/suppliers/create") => supplier_create(conn, market, body),
+        ("POST", "/api/suppliers/create/") | ("POST", "/api/suppliers/create") => {
+            supplier_create(conn, market, body)
+        }
         ("GET", "/api/purchases/") | ("GET", "/api/purchases") => purchases_index(conn, market),
-        ("POST", "/api/purchases/create/") | ("POST", "/api/purchases/create") => purchase_create(conn, market, body),
-        ("POST", "/api/inventory/audit/") | ("POST", "/api/inventory/audit") => inventory_audit(conn, market, body),
+        ("POST", "/api/purchases/create/") | ("POST", "/api/purchases/create") => {
+            purchase_create(conn, market, body)
+        }
+        ("POST", "/api/inventory/audit/") | ("POST", "/api/inventory/audit") => {
+            inventory_audit(conn, market, body)
+        }
         ("GET", "/api/debtors/") | ("GET", "/api/debtors") => {
             ok_result(json!(debtors_json(conn, market.id)?))
         }
-        ("POST", "/api/debtors/payment/") | ("POST", "/api/debtors/payment") => debtor_payment(conn, market, body),
+        ("POST", "/api/debtors/payment/") | ("POST", "/api/debtors/payment") => {
+            debtor_payment(conn, market, body)
+        }
         ("GET", "/api/debts/") | ("GET", "/api/debts") => Ok(ok(json!([]))),
         ("GET", "/api/expense/") | ("GET", "/api/expense") => expenses(conn, market),
         ("GET", "/api/expense/types/") | ("GET", "/api/expense/types") => Ok(ok(json!({
@@ -233,7 +268,7 @@ fn route_dynamic(
                  WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
                 params![id, market.id],
             )
-                .map_err(|err| err.to_string())?;
+            .map_err(|err| err.to_string())?;
             return Ok(ok(json!({"message": "Product deleted successfully"})));
         }
     }
@@ -290,7 +325,10 @@ fn signup(conn: &Connection, body: &Value) -> Result<ApiResponse, String> {
     let profile_picture = media_value(body, &["profile_picture", "store_image", "image"]);
 
     if phone_number.is_empty() || market_name.is_empty() || password.is_empty() {
-        return Ok(error(400, "Store name, phone number and password are required"));
+        return Ok(error(
+            400,
+            "Store name, phone number and password are required",
+        ));
     }
 
     let token = make_token();
@@ -336,8 +374,11 @@ fn login(conn: &Connection, body: &Value) -> Result<ApiResponse, String> {
     }
 
     let token = make_token();
-    conn.execute("UPDATE markets SET token = ?1 WHERE id = ?2", params![token, id])
-        .map_err(|err| err.to_string())?;
+    conn.execute(
+        "UPDATE markets SET token = ?1 WHERE id = ?2",
+        params![token, id],
+    )
+    .map_err(|err| err.to_string())?;
     let market = market_json(conn, id)?;
     Ok(ok(json!({"token": token, "market": market})))
 }
@@ -346,7 +387,12 @@ fn dashboard(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, S
     let products = products_json(conn, market.id, None)?;
     let quantity: f64 = products
         .iter()
-        .map(|product| product.get("quantity").and_then(Value::as_f64).unwrap_or(0.0))
+        .map(|product| {
+            product
+                .get("quantity")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0)
+        })
         .sum();
     let products_by_sells = products_json(conn, market.id, Some("sells"))?;
     let products_by_price = products_json(conn, market.id, Some("price"))?;
@@ -354,7 +400,9 @@ fn dashboard(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, S
     let income = month_income(conn, market.id)?;
     let products_added = sum_update_quantities_market(conn, market.id, "added")?;
     let products_subbed = sum_update_quantities_market(conn, market.id, "subed")?;
-    let expanses_total = month_expenses(conn, market.id)?;
+    let operating_expenses_total = month_expenses(conn, market.id)?;
+    let purchase_expenses_total = month_inventory_purchases(conn, market.id)?;
+    let expanses_total = operating_expenses_total + purchase_expenses_total;
 
     Ok(ok(json!([
         {"products": products},
@@ -365,6 +413,8 @@ fn dashboard(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, S
         {"market_data": market_json(conn, market.id)?},
         {"income": income},
         {"expanses_total": expanses_total},
+        {"operating_expenses_total": operating_expenses_total},
+        {"purchase_expenses_total": purchase_expenses_total},
         {"products_subbed": products_subbed},
         {"products_added": products_added},
         {"current_month": current_month_name()}
@@ -374,7 +424,10 @@ fn dashboard(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, S
 fn products_index(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, String> {
     let products = products_json(conn, market.id, None)?;
     let products_quantity = products.len();
-    let available_products = products.iter().filter(|p| p["status"] == "available").count();
+    let available_products = products
+        .iter()
+        .filter(|p| p["status"] == "available")
+        .count();
     let few_products = products.iter().filter(|p| p["status"] == "few").count();
     let ended_products = products.iter().filter(|p| p["status"] == "ended").count();
 
@@ -398,7 +451,11 @@ fn low_stock_products(conn: &Connection, market: &MarketSession) -> Result<ApiRe
     Ok(ok(json!(products)))
 }
 
-fn product_by_barcode(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn product_by_barcode(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let barcode = text(body, "barcode");
     if barcode.is_empty() {
         return Ok(error(400, "Barcode is required"));
@@ -423,7 +480,11 @@ fn product_by_barcode(conn: &Connection, market: &MarketSession, body: &Value) -
     }
 }
 
-fn scanner_latest_event(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn scanner_latest_event(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let last_event_id = integer(body, "last_event_id");
     let event = conn
         .query_row(
@@ -468,7 +529,11 @@ fn scanner_status(conn: &Connection, market: &MarketSession) -> Result<ApiRespon
     })))
 }
 
-fn update_market_plan(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn update_market_plan(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let plan = text(body, "plan");
     if plan.is_empty() {
         return Ok(error(400, "Plan is required"));
@@ -480,18 +545,24 @@ fn update_market_plan(conn: &Connection, market: &MarketSession, body: &Value) -
     )
     .map_err(|err| err.to_string())?;
 
-    Ok(ok(json!({"message": "Plan updated successfully", "market": market_json(conn, market.id)?})))
+    Ok(ok(
+        json!({"message": "Plan updated successfully", "market": market_json(conn, market.id)?}),
+    ))
 }
 
-fn product_create(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn product_create(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let category_id = integer(body, "category_id");
     let name = text(body, "name");
     let quantity = number(body, "quantity");
     let min_quantity = number_default(body, "min_quantity", 50.0);
     let quantity_type = text_default(body, "quantity_type", "dona");
     let price_per_quantity = number(body, "price_per_quantity");
-    let bought_price = number_default(body, "bought_price", price_per_quantity * quantity);
-    let cost_per_quantity = if quantity > 0.0 { bought_price / quantity } else { 0.0 };
+    let cost_per_quantity = number_default(body, "bought_price", 0.0);
+    let bought_total = cost_per_quantity * quantity;
     let image = image_value(body);
     let barcode = text(body, "barcode");
     let expiry_date = text(body, "expiry_date");
@@ -515,7 +586,7 @@ fn product_create(conn: &Connection, market: &MarketSession, body: &Value) -> Re
     conn.execute(
         "INSERT INTO product_updates (product_id, status, quantity, price, debtor_id, date)
          VALUES (?1, 'added', ?2, ?3, NULL, ?4)",
-        params![product_id, quantity, bought_price, now_iso()],
+        params![product_id, quantity, bought_total, now_iso()],
     )
     .map_err(|err| err.to_string())?;
     conn.execute(
@@ -531,19 +602,24 @@ fn product_create(conn: &Connection, market: &MarketSession, body: &Value) -> Re
         )
         .map_err(|err| err.to_string())?;
     }
-    if !expiry_date.is_empty() {
-        conn.execute(
-            "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![product_id, batch_number, expiry_date, quantity, cost_per_quantity, now_iso()],
-        )
-        .map_err(|err| err.to_string())?;
-    }
+    conn.execute(
+        "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![product_id, batch_number, expiry_date, quantity, cost_per_quantity, now_iso()],
+    )
+    .map_err(|err| err.to_string())?;
 
-    Ok(ok(json!({"message": "Product created and new updated saved successfully"})))
+    Ok(ok(
+        json!({"message": "Product created and new updated saved successfully"}),
+    ))
 }
 
-fn product_update(conn: &Connection, market: &MarketSession, product_id: i64, body: &Value) -> Result<ApiResponse, String> {
+fn product_update(
+    conn: &Connection,
+    market: &MarketSession,
+    product_id: i64,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let category_id = integer(body, "category_id");
     let name = text(body, "name");
     let quantity = number(body, "quantity");
@@ -552,12 +628,29 @@ fn product_update(conn: &Connection, market: &MarketSession, product_id: i64, bo
     let quantity_type = text_default(body, "quantity_type", "dona");
     let price_per_quantity = number(body, "price_per_quantity");
     let cost_per_quantity = number_optional(body, "cost_per_quantity");
-    let status = text_default(body, "status", &product_status(quantity, status_min_quantity));
+    let status = text_default(
+        body,
+        "status",
+        &product_status(quantity, status_min_quantity),
+    );
     let image = image_value(body);
     let barcode = text(body, "barcode");
     if !category_belongs_to_market(conn, category_id, market.id)? {
         return Ok(error(404, "Category not found"));
     }
+    let previous_cost_per_quantity = conn
+        .query_row(
+            "SELECT cost_per_quantity
+             FROM products
+             WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
+            params![product_id, market.id],
+            |row| row.get::<_, f64>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?;
+    let Some(previous_cost_per_quantity) = previous_cost_per_quantity else {
+        return Ok(error(404, "Product not found"));
+    };
 
     conn.execute(
         "UPDATE products
@@ -567,6 +660,24 @@ fn product_update(conn: &Connection, market: &MarketSession, product_id: i64, bo
         params![category_id, name, quantity, min_quantity, quantity_type, price_per_quantity, cost_per_quantity, image, status, product_id, market.id],
     )
     .map_err(|err| err.to_string())?;
+    if let Some(new_cost_per_quantity) = cost_per_quantity {
+        conn.execute(
+            "UPDATE stock_batches
+             SET cost_per_quantity = ?1
+             WHERE product_id = ?2
+               AND quantity > 0
+               AND ABS(cost_per_quantity - ?3) <= CASE
+                    WHEN ?3 * 0.001 > 0.01 THEN ?3 * 0.001
+                    ELSE 0.01
+               END",
+            params![
+                new_cost_per_quantity,
+                product_id,
+                previous_cost_per_quantity
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    }
     if !barcode.is_empty() {
         conn.execute(
             "INSERT OR IGNORE INTO barcodes (product_id, number, date) VALUES (?1, ?2, ?3)",
@@ -578,7 +689,11 @@ fn product_update(conn: &Connection, market: &MarketSession, product_id: i64, bo
     Ok(ok(json!({"message": "Product updated successfully"})))
 }
 
-fn product_delete_several(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn product_delete_several(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     if let Some(ids) = body.get("ids").and_then(Value::as_array) {
         for id in ids.iter().filter_map(Value::as_i64) {
             conn.execute(
@@ -586,18 +701,28 @@ fn product_delete_several(conn: &Connection, market: &MarketSession, body: &Valu
                  WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
                 params![id, market.id],
             )
-                .map_err(|err| err.to_string())?;
+            .map_err(|err| err.to_string())?;
         }
     }
     Ok(ok(json!({"message": "Products deleted successfully"})))
 }
 
-fn product_detail(conn: &Connection, market: &MarketSession, product_id: i64) -> Result<ApiResponse, String> {
+fn product_detail(
+    conn: &Connection,
+    market: &MarketSession,
+    product_id: i64,
+) -> Result<ApiResponse, String> {
     let product = product_json(conn, market.id, product_id)?;
     let product_sold = product_updates_json(conn, Some(product_id), None, Some("subed"))?;
     let product_bought = product_updates_json(conn, Some(product_id), None, Some("added"))?;
-    let total_sold = product_sold.iter().map(|u| u["price"].as_f64().unwrap_or(0.0)).sum::<f64>();
-    let total_bought = product_bought.iter().map(|u| u["price"].as_f64().unwrap_or(0.0)).sum::<f64>();
+    let total_sold = product_sold
+        .iter()
+        .map(|u| u["price"].as_f64().unwrap_or(0.0))
+        .sum::<f64>();
+    let total_bought = product_bought
+        .iter()
+        .map(|u| u["price"].as_f64().unwrap_or(0.0))
+        .sum::<f64>();
 
     Ok(ok(json!({
         "product": product,
@@ -630,9 +755,7 @@ fn products_report(conn: &Connection, market: &MarketSession) -> Result<ApiRespo
 
 fn sales_index(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, String> {
     let mut stmt = conn
-        .prepare(
-            "SELECT id FROM sales WHERE market_id = ?1 ORDER BY created_at DESC LIMIT 100",
-        )
+        .prepare("SELECT id FROM sales WHERE market_id = ?1 ORDER BY created_at DESC LIMIT 100")
         .map_err(|err| err.to_string())?;
     let ids = stmt
         .query_map(params![market.id], |row| row.get::<_, i64>(0))
@@ -644,7 +767,11 @@ fn sales_index(conn: &Connection, market: &MarketSession) -> Result<ApiResponse,
     Ok(ok(json!(sales)))
 }
 
-fn sale_detail(conn: &Connection, market: &MarketSession, sale_id: i64) -> Result<ApiResponse, String> {
+fn sale_detail(
+    conn: &Connection,
+    market: &MarketSession,
+    sale_id: i64,
+) -> Result<ApiResponse, String> {
     Ok(ok(json!({
         "sale": sale_json(conn, market.id, sale_id)?,
         "receipt": receipt_json(conn, market.id, sale_id)?
@@ -682,15 +809,19 @@ fn reports_summary(conn: &Connection, market: &MarketSession) -> Result<ApiRespo
     let debt_report = debtors_json(conn, market.id)?;
     let returns_total = month_returns(conn, market.id)?;
     let income = month_income(conn, market.id)?;
-    let expenses_total = month_expenses(conn, market.id)?;
+    let operating_expenses_total = month_expenses(conn, market.id)?;
+    let purchase_expenses_total = month_inventory_purchases(conn, market.id)?;
+    let expenses_total = operating_expenses_total + purchase_expenses_total;
     let cogs = month_cogs(conn, market.id)?;
 
     Ok(ok(json!({
         "daily_sales": daily_sales,
-        "monthly_profit": income - cogs - expenses_total,
+        "monthly_profit": income - cogs - operating_expenses_total,
         "income": income,
         "cost_of_goods": cogs,
         "expenses_total": expenses_total,
+        "operating_expenses_total": operating_expenses_total,
+        "purchase_expenses_total": purchase_expenses_total,
         "returns_total": returns_total,
         "top_products": top_products,
         "dead_stock": dead_stock,
@@ -700,9 +831,19 @@ fn reports_summary(conn: &Connection, market: &MarketSession) -> Result<ApiRespo
     })))
 }
 
-fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
-    let sells = body.get("sells").and_then(Value::as_array).cloned().unwrap_or_default();
+fn save_product_updates(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
+    let sells = body
+        .get("sells")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     if sells.is_empty() {
         return Ok(error(400, "No products selected"));
     }
@@ -724,7 +865,10 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
 
         if let Some((id, saved_name)) = existing {
             if saved_name.to_lowercase() != debtor_name.to_lowercase() {
-                return Ok(error(400, "Bir raqamdan faqat bitta nomga qarz olish mumkin"));
+                return Ok(error(
+                    400,
+                    "Bir raqamdan faqat bitta nomga qarz olish mumkin",
+                ));
             }
             debtor_id = Some(id);
             message.push_str(" and debt added successfully");
@@ -739,7 +883,16 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
         }
     }
 
-    let mut normalized_items: Vec<(i64, String, f64, f64, f64, f64, f64)> = Vec::new();
+    let mut normalized_items: Vec<(
+        i64,
+        String,
+        f64,
+        f64,
+        f64,
+        f64,
+        f64,
+        Vec<StockBatchAllocation>,
+    )> = Vec::new();
     for item in sells {
         let product_id = integer(&item, "product_id");
         let quantity = number(&item, "quantity");
@@ -755,7 +908,13 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
                  JOIN categories c ON c.id = p.category_id
                  WHERE p.id = ?1 AND c.market_id = ?2",
                 params![product_id, market.id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?, row.get::<_, f64>(2)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, f64>(1)?,
+                        row.get::<_, f64>(2)?,
+                    ))
+                },
             )
             .optional()
             .map_err(|err| err.to_string())?;
@@ -778,8 +937,28 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
             return Ok(error(400, "Invalid item discount"));
         }
         let price = line_subtotal - item_discount;
+        let batch_allocations =
+            plan_stock_batch_allocations(&tx, product_id, quantity).map_err(|message| message)?;
+        let total_batch_cost: f64 = batch_allocations
+            .iter()
+            .map(|allocation| allocation.quantity * allocation.cost_per_quantity)
+            .sum();
+        let cost_at_sale = if quantity > 0.0 {
+            total_batch_cost / quantity
+        } else {
+            cost_per_quantity
+        };
         subtotal += price;
-        normalized_items.push((product_id, product_name, quantity, unit_price, price, cost_per_quantity, item_discount));
+        normalized_items.push((
+            product_id,
+            product_name,
+            quantity,
+            unit_price,
+            price,
+            cost_at_sale,
+            item_discount,
+            batch_allocations,
+        ));
     }
 
     let discount = number(body, "discount");
@@ -807,7 +986,10 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
     let paid_amount: f64 = payments.iter().map(|(_, amount)| *amount).sum();
     let unpaid_amount = (total_price - paid_amount).max(0.0);
     if unpaid_amount > 0.0 && debtor_id.is_none() {
-        return Ok(error(400, "Debtor information is required for unpaid sales"));
+        return Ok(error(
+            400,
+            "Debtor information is required for unpaid sales",
+        ));
     }
     if unpaid_amount > 0.0 && payment_method != "debt" {
         payment_method = "mixed".to_string();
@@ -822,7 +1004,17 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
     .map_err(|err| err.to_string())?;
     let sale_id = tx.last_insert_rowid();
 
-    for (product_id, _product_name, quantity, unit_price, price, cost_per_quantity, item_discount) in normalized_items {
+    for (
+        product_id,
+        _product_name,
+        quantity,
+        unit_price,
+        price,
+        cost_per_quantity,
+        item_discount,
+        batch_allocations,
+    ) in normalized_items
+    {
         tx.execute(
             "INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, discount, cost_at_sale, total_price, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -830,6 +1022,8 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
         )
         .map_err(|err| err.to_string())?;
         let sale_item_id = tx.last_insert_rowid();
+        record_sale_item_batch_allocations(&tx, sale_item_id, &batch_allocations)?;
+        consume_stock_batch_allocations(&tx, &batch_allocations)?;
         tx.execute(
             "INSERT INTO product_updates (product_id, status, quantity, price, debtor_id, sale_item_id, date)
              VALUES (?1, 'subed', ?2, ?3, ?4, ?5, ?6)",
@@ -875,17 +1069,29 @@ fn save_product_updates(conn: &Connection, market: &MarketSession, body: &Value)
     }
 
     tx.commit().map_err(|err| err.to_string())?;
-    Ok(ok(json!({"message": message, "sale": sale_json(conn, market.id, sale_id)?, "receipt": receipt_json(conn, market.id, sale_id)?})))
+    Ok(ok(
+        json!({"message": message, "sale": sale_json(conn, market.id, sale_id)?, "receipt": receipt_json(conn, market.id, sale_id)?}),
+    ))
 }
 
-fn save_bought_products(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn save_bought_products(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let product_id = integer(body, "product_id");
     let quantity = number(body, "quantity");
     let price = number(body, "price");
     let supplier_name = text(body, "supplier_name");
     let supplier_phone = text(body, "supplier_phone");
-    let invoice_number = text_default(body, "invoice_number", &make_purchase_invoice_number(market.id));
+    let invoice_number = text_default(
+        body,
+        "invoice_number",
+        &make_purchase_invoice_number(market.id),
+    );
     let expiry_date = text(body, "expiry_date");
     let batch_number = text_default(body, "batch_number", &invoice_number);
     if quantity <= 0.0 || price < 0.0 {
@@ -952,14 +1158,12 @@ fn save_bought_products(conn: &Connection, market: &MarketSession, body: &Value)
         )
         .map_err(|err| err.to_string())?;
     }
-    if !expiry_date.is_empty() {
-        tx.execute(
-            "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![product_id, batch_number, expiry_date, quantity, if quantity > 0.0 { price / quantity } else { 0.0 }, now_iso()],
-        )
-        .map_err(|err| err.to_string())?;
-    }
+    tx.execute(
+        "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![product_id, batch_number, expiry_date, quantity, if quantity > 0.0 { price / quantity } else { 0.0 }, now_iso()],
+    )
+    .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
     Ok(ok(json!({"message": "Product bought successfully"})))
 }
@@ -982,14 +1186,20 @@ fn suppliers_index(conn: &Connection, market: &MarketSession) -> Result<ApiRespo
     collect_rows(rows)
 }
 
-fn supplier_create(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn supplier_create(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     let name = text(body, "name");
     let phone = text(body, "phone");
     if name.is_empty() {
         return Ok(error(400, "Supplier name is required"));
     }
     let id = ensure_supplier(conn, market.id, &name, &phone)?;
-    Ok(ok(json!({"message": "Supplier saved successfully", "supplier_id": id})))
+    Ok(ok(
+        json!({"message": "Supplier saved successfully", "supplier_id": id}),
+    ))
 }
 
 fn purchases_index(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, String> {
@@ -1017,12 +1227,22 @@ fn purchases_index(conn: &Connection, market: &MarketSession) -> Result<ApiRespo
     collect_rows(rows)
 }
 
-fn purchase_create(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
+fn purchase_create(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
     save_bought_products(conn, market, body)
 }
 
-fn inventory_audit(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn inventory_audit(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let product_id = integer(body, "product_id");
     let counted_quantity = number(body, "quantity");
     let reason = text_default(body, "reason", "manual_adjustment");
@@ -1066,11 +1286,19 @@ fn inventory_audit(conn: &Connection, market: &MarketSession, body: &Value) -> R
     )
     .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
-    Ok(ok(json!({"message": "Inventory corrected successfully", "difference": delta})))
+    Ok(ok(
+        json!({"message": "Inventory corrected successfully", "difference": delta}),
+    ))
 }
 
-fn return_sale_item(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn return_sale_item(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let sale_item_id = integer(body, "sale_item_id");
     let return_quantity = number(body, "quantity");
     let reason = text_default(body, "reason", "return");
@@ -1100,7 +1328,16 @@ fn return_sale_item(conn: &Connection, market: &MarketSession, body: &Value) -> 
         )
         .optional()
         .map_err(|err| err.to_string())?;
-    let Some((sale_id, product_id, sold_quantity, returned_quantity, total_price, debtor_id, product_name)) = item else {
+    let Some((
+        sale_id,
+        product_id,
+        sold_quantity,
+        returned_quantity,
+        total_price,
+        debtor_id,
+        product_name,
+    )) = item
+    else {
         return Ok(error(404, "Sale item not found"));
     };
     let remaining = sold_quantity - returned_quantity;
@@ -1129,6 +1366,13 @@ fn return_sale_item(conn: &Connection, market: &MarketSession, body: &Value) -> 
         params![return_quantity, product_id],
     )
     .map_err(|err| err.to_string())?;
+    restore_returned_stock_batches(
+        &tx,
+        sale_item_id,
+        product_id,
+        sold_quantity,
+        return_quantity,
+    )?;
     tx.execute(
         "INSERT INTO returns (sale_id, sale_item_id, product_id, quantity, amount, reason, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -1157,15 +1401,27 @@ fn return_sale_item(conn: &Connection, market: &MarketSession, body: &Value) -> 
     })))
 }
 
-fn get_debtors_debts(conn: &Connection, market: &MarketSession, debtor_id: i64) -> Result<ApiResponse, String> {
+fn get_debtors_debts(
+    conn: &Connection,
+    market: &MarketSession,
+    debtor_id: i64,
+) -> Result<ApiResponse, String> {
     let debtor = debtor_json(conn, market.id, debtor_id)?;
     let debts = product_updates_json(conn, None, Some(debtor_id), None)?;
     let payments = debtor_payments_json(conn, market.id, debtor_id)?;
-    Ok(ok(json!({"debtor": debtor, "debts": debts, "payments": payments})))
+    Ok(ok(
+        json!({"debtor": debtor, "debts": debts, "payments": payments}),
+    ))
 }
 
-fn debtor_payment(conn: &Connection, market: &MarketSession, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn debtor_payment(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let debtor_id = integer(body, "debtor_id");
     let amount = number(body, "amount");
     let method = text_default(body, "method", "cash");
@@ -1197,11 +1453,19 @@ fn debtor_payment(conn: &Connection, market: &MarketSession, body: &Value) -> Re
     )
     .map_err(|err| err.to_string())?;
     tx.commit().map_err(|err| err.to_string())?;
-    Ok(ok(json!({"message": "Payment saved successfully", "amount": applied})))
+    Ok(ok(
+        json!({"message": "Payment saved successfully", "amount": applied}),
+    ))
 }
 
-fn delete_debt(conn: &Connection, market: &MarketSession, debt_id: i64) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn delete_debt(
+    conn: &Connection,
+    market: &MarketSession,
+    debt_id: i64,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let debt = tx
         .query_row(
             "SELECT u.debtor_id, u.price
@@ -1214,12 +1478,21 @@ fn delete_debt(conn: &Connection, market: &MarketSession, debt_id: i64) -> Resul
         .optional()
         .map_err(|err| err.to_string())?;
     if let Some((Some(debtor_id), price)) = debt {
-        tx.execute("UPDATE product_updates SET debtor_id = NULL WHERE id = ?1", params![debt_id])
-            .map_err(|err| err.to_string())?;
-        tx.execute("UPDATE debtors SET price = price - ?1 WHERE id = ?2", params![price, debtor_id])
-            .map_err(|err| err.to_string())?;
-        tx.execute("DELETE FROM debtors WHERE id = ?1 AND price <= 0", params![debtor_id])
-            .map_err(|err| err.to_string())?;
+        tx.execute(
+            "UPDATE product_updates SET debtor_id = NULL WHERE id = ?1",
+            params![debt_id],
+        )
+        .map_err(|err| err.to_string())?;
+        tx.execute(
+            "UPDATE debtors SET price = price - ?1 WHERE id = ?2",
+            params![price, debtor_id],
+        )
+        .map_err(|err| err.to_string())?;
+        tx.execute(
+            "DELETE FROM debtors WHERE id = ?1 AND price <= 0",
+            params![debtor_id],
+        )
+        .map_err(|err| err.to_string())?;
     }
     tx.commit().map_err(|err| err.to_string())?;
     Ok(ok(json!({"message": "Debt deleted successfully"})))
@@ -1230,7 +1503,11 @@ fn expenses(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, St
     ok_result(json!(expenses_json(conn, market.id, Some(&prefix))?))
 }
 
-fn expenses_json(conn: &Connection, market_id: i64, month_prefix: Option<&str>) -> Result<Vec<Value>, String> {
+fn expenses_json(
+    conn: &Connection,
+    market_id: i64,
+    month_prefix: Option<&str>,
+) -> Result<Vec<Value>, String> {
     let (sql, pattern) = if let Some(prefix) = month_prefix {
         (
             "SELECT id, market_id, type, price, date FROM expenses WHERE market_id = ?1 AND date LIKE ?2 ORDER BY date DESC",
@@ -1242,9 +1519,7 @@ fn expenses_json(conn: &Connection, market_id: i64, month_prefix: Option<&str>) 
             "%".to_string(),
         )
     };
-    let mut stmt = conn
-        .prepare(sql)
-        .map_err(|err| err.to_string())?;
+    let mut stmt = conn.prepare(sql).map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map(params![market_id, pattern], |row| {
             Ok(json!({
@@ -1265,8 +1540,14 @@ fn history(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, Str
     Ok(ok(json!(updates)))
 }
 
-fn history_delete(conn: &Connection, market: &MarketSession, update_id: i64) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn history_delete(
+    conn: &Connection,
+    market: &MarketSession,
+    update_id: i64,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let update = tx
         .query_row(
             "SELECT u.product_id, u.quantity, u.price, u.debtor_id
@@ -1287,21 +1568,37 @@ fn history_delete(conn: &Connection, market: &MarketSession, update_id: i64) -> 
         .optional()
         .map_err(|err| err.to_string())?;
     if let Some((product_id, quantity, price, debtor_id)) = update {
-        tx.execute("UPDATE products SET quantity = quantity + ?1 WHERE id = ?2", params![quantity, product_id])
-            .map_err(|err| err.to_string())?;
+        tx.execute(
+            "UPDATE products SET quantity = quantity + ?1 WHERE id = ?2",
+            params![quantity, product_id],
+        )
+        .map_err(|err| err.to_string())?;
         if let Some(id) = debtor_id {
-            tx.execute("UPDATE debtors SET price = price - ?1 WHERE id = ?2", params![price, id])
-                .map_err(|err| err.to_string())?;
-        }
-        tx.execute("DELETE FROM product_updates WHERE id = ?1", params![update_id])
+            tx.execute(
+                "UPDATE debtors SET price = price - ?1 WHERE id = ?2",
+                params![price, id],
+            )
             .map_err(|err| err.to_string())?;
+        }
+        tx.execute(
+            "DELETE FROM product_updates WHERE id = ?1",
+            params![update_id],
+        )
+        .map_err(|err| err.to_string())?;
     }
     tx.commit().map_err(|err| err.to_string())?;
     Ok(ok(json!({"message": "History deleted successfully"})))
 }
 
-fn history_update(conn: &Connection, market: &MarketSession, update_id: i64, body: &Value) -> Result<ApiResponse, String> {
-    let tx = conn.unchecked_transaction().map_err(|err| err.to_string())?;
+fn history_update(
+    conn: &Connection,
+    market: &MarketSession,
+    update_id: i64,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|err| err.to_string())?;
     let old = tx
         .query_row(
             "SELECT u.product_id, u.quantity, u.price, u.debtor_id
@@ -1344,7 +1641,10 @@ fn history_update(conn: &Connection, market: &MarketSession, update_id: i64, bod
     Ok(ok(json!({"message": "History updated successfully"})))
 }
 
-fn categories_with_products(conn: &Connection, market: &MarketSession) -> Result<ApiResponse, String> {
+fn categories_with_products(
+    conn: &Connection,
+    market: &MarketSession,
+) -> Result<ApiResponse, String> {
     let categories = categories_json(conn, market.id)?;
     let mut result = serde_json::Map::new();
     for category in categories {
@@ -1355,7 +1655,11 @@ fn categories_with_products(conn: &Connection, market: &MarketSession) -> Result
     Ok(ok(Value::Object(result)))
 }
 
-fn products_json(conn: &Connection, market_id: i64, order: Option<&str>) -> Result<Vec<Value>, String> {
+fn products_json(
+    conn: &Connection,
+    market_id: i64,
+    order: Option<&str>,
+) -> Result<Vec<Value>, String> {
     let category_ids = category_ids(conn, market_id)?;
     if category_ids.is_empty() {
         return Ok(vec![]);
@@ -1393,7 +1697,7 @@ fn products_for_category_json(conn: &Connection, category_id: i64) -> Result<Vec
                     COALESCE(SUM(CASE WHEN u.status = 'subed' THEN u.quantity ELSE 0 END), 0) AS total_subtracted,
                     COALESCE(SUM(CASE WHEN u.status = 'subed' THEN u.price ELSE 0 END), 0) AS total_sold_price,
                     COALESCE((SELECT GROUP_CONCAT(b.number, '|') FROM barcodes b WHERE b.product_id = p.id), '') AS barcodes,
-                    (SELECT MIN(sb.expiry_date) FROM stock_batches sb WHERE sb.product_id = p.id AND sb.quantity > 0) AS nearest_expiry_date
+                    (SELECT MIN(sb.expiry_date) FROM stock_batches sb WHERE sb.product_id = p.id AND sb.quantity > 0 AND sb.expiry_date <> '') AS nearest_expiry_date
              FROM products p
              JOIN categories c ON c.id = p.category_id
              LEFT JOIN product_updates u ON u.product_id = p.id
@@ -1415,7 +1719,7 @@ fn product_json(conn: &Connection, market_id: i64, product_id: i64) -> Result<Va
                 COALESCE(SUM(CASE WHEN u.status = 'subed' THEN u.quantity ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN u.status = 'subed' THEN u.price ELSE 0 END), 0),
                 COALESCE((SELECT GROUP_CONCAT(b.number, '|') FROM barcodes b WHERE b.product_id = p.id), ''),
-                (SELECT MIN(sb.expiry_date) FROM stock_batches sb WHERE sb.product_id = p.id AND sb.quantity > 0)
+                (SELECT MIN(sb.expiry_date) FROM stock_batches sb WHERE sb.product_id = p.id AND sb.quantity > 0 AND sb.expiry_date <> '')
          FROM products p
          JOIN categories c ON c.id = p.category_id
          LEFT JOIN product_updates u ON u.product_id = p.id
@@ -1455,7 +1759,9 @@ fn product_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
 
 fn categories_json(conn: &Connection, market_id: i64) -> Result<Vec<Value>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, name, market_id, date FROM categories WHERE market_id = ?1 ORDER BY name")
+        .prepare(
+            "SELECT id, name, market_id, date FROM categories WHERE market_id = ?1 ORDER BY name",
+        )
         .map_err(|err| err.to_string())?;
     let rows = stmt
         .query_map(params![market_id], |row| {
@@ -1507,7 +1813,11 @@ fn debtor_json(conn: &Connection, market_id: i64, debtor_id: i64) -> Result<Valu
     .map_err(|err| err.to_string())
 }
 
-fn debtor_payments_json(conn: &Connection, market_id: i64, debtor_id: i64) -> Result<Vec<Value>, String> {
+fn debtor_payments_json(
+    conn: &Connection,
+    market_id: i64,
+    debtor_id: i64,
+) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT dp.id, dp.debtor_id, dp.amount, dp.method, dp.note, dp.created_at
@@ -1622,7 +1932,8 @@ fn sale_items_json(conn: &Connection, sale_id: i64) -> Result<Vec<Value>, String
     let mut stmt = conn
         .prepare(
             "SELECT si.id, si.sale_id, si.product_id, p.name, si.quantity, si.unit_price,
-                    si.discount, si.cost_at_sale, si.total_price, si.returned_quantity, si.created_at
+                    si.discount, si.cost_at_sale, si.total_price, si.returned_quantity,
+                    si.created_at, p.cost_per_quantity
              FROM sale_items si
              JOIN products p ON p.id = si.product_id
              WHERE si.sale_id = ?1
@@ -1642,7 +1953,8 @@ fn sale_items_json(conn: &Connection, sale_id: i64) -> Result<Vec<Value>, String
                 "cost_at_sale": row.get::<_, f64>(7)?,
                 "total_price": row.get::<_, f64>(8)?,
                 "returned_quantity": row.get::<_, f64>(9)?,
-                "created_at": row.get::<_, String>(10)?
+                "created_at": row.get::<_, String>(10)?,
+                "current_cost_per_quantity": row.get::<_, f64>(11)?
             }))
         })
         .map_err(|err| err.to_string())?;
@@ -1714,14 +2026,27 @@ fn product_updates_json(
     };
 
     match (product_id, debtor_id, status) {
-        (Some(pid), _, Some(st)) => collect_vec(stmt.query_map(params![pid, st], mapper).map_err(|err| err.to_string())?),
-        (_, Some(did), _) => collect_vec(stmt.query_map(params![did], mapper).map_err(|err| err.to_string())?),
-        (Some(pid), _, _) => collect_vec(stmt.query_map(params![pid], mapper).map_err(|err| err.to_string())?),
+        (Some(pid), _, Some(st)) => collect_vec(
+            stmt.query_map(params![pid, st], mapper)
+                .map_err(|err| err.to_string())?,
+        ),
+        (_, Some(did), _) => collect_vec(
+            stmt.query_map(params![did], mapper)
+                .map_err(|err| err.to_string())?,
+        ),
+        (Some(pid), _, _) => collect_vec(
+            stmt.query_map(params![pid], mapper)
+                .map_err(|err| err.to_string())?,
+        ),
         _ => collect_vec(stmt.query_map([], mapper).map_err(|err| err.to_string())?),
     }
 }
 
-fn product_update_json(conn: &Connection, market: &MarketSession, update_id: i64) -> Result<Value, String> {
+fn product_update_json(
+    conn: &Connection,
+    market: &MarketSession,
+    update_id: i64,
+) -> Result<Value, String> {
     let mut updates = product_updates_json(conn, None, None, None)?;
     let update = updates
         .drain(..)
@@ -1729,14 +2054,20 @@ fn product_update_json(conn: &Connection, market: &MarketSession, update_id: i64
             update["id"].as_i64() == Some(update_id)
                 && update["product_id"]
                     .as_i64()
-                    .map(|product_id| product_belongs_to_market(conn, product_id, market.id).unwrap_or(false))
+                    .map(|product_id| {
+                        product_belongs_to_market(conn, product_id, market.id).unwrap_or(false)
+                    })
                     .unwrap_or(false)
         })
         .ok_or_else(|| "Update not found".to_string())?;
     Ok(update)
 }
 
-fn product_updates_for_ids_json(conn: &Connection, ids: &[i64], status: &str) -> Result<Vec<Value>, String> {
+fn product_updates_for_ids_json(
+    conn: &Connection,
+    ids: &[i64],
+    status: &str,
+) -> Result<Vec<Value>, String> {
     let mut result = Vec::new();
     for id in ids {
         result.extend(product_updates_json(conn, Some(*id), None, Some(status))?);
@@ -1779,11 +2110,7 @@ fn authenticate(conn: &Connection, headers: Option<&Value>) -> Result<MarketSess
     conn.query_row(
         "SELECT id FROM markets WHERE token = ?1",
         params![token],
-        |row| {
-            Ok(MarketSession {
-                id: row.get(0)?,
-            })
-        },
+        |row| Ok(MarketSession { id: row.get(0)? }),
     )
     .optional()
     .map_err(|err| err.to_string())?
@@ -1936,6 +2263,16 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
         );
 
+        CREATE TABLE IF NOT EXISTS sale_item_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_item_id INTEGER NOT NULL,
+            stock_batch_id INTEGER NOT NULL,
+            quantity REAL NOT NULL,
+            cost_per_quantity REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (stock_batch_id) REFERENCES stock_batches(id) ON DELETE RESTRICT
+        );
+
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sale_id INTEGER NOT NULL,
@@ -2055,6 +2392,8 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_sales_market_id ON sales(market_id);
         CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
         CREATE INDEX IF NOT EXISTS idx_sale_items_product_id ON sale_items(product_id);
+        CREATE INDEX IF NOT EXISTS idx_sale_item_batches_sale_item_id ON sale_item_batches(sale_item_id);
+        CREATE INDEX IF NOT EXISTS idx_sale_item_batches_stock_batch_id ON sale_item_batches(stock_batch_id);
         CREATE INDEX IF NOT EXISTS idx_payments_sale_id ON payments(sale_id);
         CREATE INDEX IF NOT EXISTS idx_stock_movements_product_id ON stock_movements(product_id);
         CREATE INDEX IF NOT EXISTS idx_debtors_market_id ON debtors(market_id);
@@ -2073,15 +2412,32 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     add_column_if_missing(conn, "markets", "password", "TEXT NOT NULL DEFAULT ''")?;
     add_column_if_missing(conn, "markets", "token", "TEXT")?;
     add_column_if_missing(conn, "products", "min_quantity", "REAL NOT NULL DEFAULT 50")?;
-    add_column_if_missing(conn, "products", "cost_per_quantity", "REAL NOT NULL DEFAULT 0")?;
+    add_column_if_missing(
+        conn,
+        "products",
+        "cost_per_quantity",
+        "REAL NOT NULL DEFAULT 0",
+    )?;
     add_column_if_missing(conn, "product_updates", "sale_item_id", "INTEGER")?;
     add_column_if_missing(conn, "sale_items", "discount", "REAL NOT NULL DEFAULT 0")?;
-    add_column_if_missing(conn, "sale_items", "returned_quantity", "REAL NOT NULL DEFAULT 0")?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_markets_token ON markets(token)", [])?;
+    add_column_if_missing(
+        conn,
+        "sale_items",
+        "returned_quantity",
+        "REAL NOT NULL DEFAULT 0",
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_markets_token ON markets(token)",
+        [],
+    )?;
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_product_updates_sale_item_id ON product_updates(sale_item_id)",
         [],
     )?;
+    repair_divided_unit_costs(conn)?;
+    repair_unit_purchase_totals(conn)?;
+    repair_sale_item_costs(conn)?;
+    bootstrap_missing_stock_batches(conn)?;
 
     let now = now_iso();
     conn.execute(
@@ -2096,7 +2452,10 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn import_legacy_database_if_empty(app: &tauri::AppHandle, conn: &Connection) -> rusqlite::Result<()> {
+fn import_legacy_database_if_empty(
+    app: &tauri::AppHandle,
+    conn: &Connection,
+) -> rusqlite::Result<()> {
     let legacy_imported = conn
         .query_row(
             "SELECT value FROM app_meta WHERE key = 'legacy_imported'",
@@ -2109,8 +2468,10 @@ fn import_legacy_database_if_empty(app: &tauri::AppHandle, conn: &Connection) ->
         return Ok(());
     }
 
-    let product_count: i64 = conn.query_row("SELECT COUNT(*) FROM products", [], |row| row.get(0))?;
-    let category_count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))?;
+    let product_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM products", [], |row| row.get(0))?;
+    let category_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))?;
     let debtor_count: i64 = conn.query_row("SELECT COUNT(*) FROM debtors", [], |row| row.get(0))?;
 
     if product_count > 0 && category_count > 0 && debtor_count > 0 {
@@ -2318,9 +2679,11 @@ fn handle_scanner_http(mut stream: TcpStream, db_path: PathBuf) -> Result<(), St
         ("OPTIONS", _) => http_response(204, "application/json", ""),
         ("GET", "/") => http_response(200, "text/html; charset=utf-8", scanner_page_html()),
         ("GET", "/scanner") => http_response(200, "text/html; charset=utf-8", scanner_page_html()),
-        ("GET", "/zxing-browser.min.js") => {
-            http_response(200, "application/javascript; charset=utf-8", zxing_browser_js())
-        }
+        ("GET", "/zxing-browser.min.js") => http_response(
+            200,
+            "application/javascript; charset=utf-8",
+            zxing_browser_js(),
+        ),
         ("GET", "/health") => http_response(200, "application/json", r#"{"ok":true}"#),
         ("POST", "/api/scanner/scan") => handle_scanner_scan(&db_path, target, body),
         ("POST", "/api/scanner/ping") => handle_scanner_ping(&db_path, target, body),
@@ -2386,7 +2749,11 @@ fn handle_scanner_scan(db_path: &PathBuf, target: &str, body: &str) -> String {
         .unwrap_or("");
 
     if barcode.is_empty() {
-        return http_response(400, "application/json", r#"{"error":"Barcode is required"}"#);
+        return http_response(
+            400,
+            "application/json",
+            r#"{"error":"Barcode is required"}"#,
+        );
     }
 
     let result = (|| -> Result<(), String> {
@@ -2629,6 +2996,211 @@ fn zxing_browser_js() -> &'static str {
     include_str!("../../node_modules/@zxing/browser/umd/zxing-browser.min.js")
 }
 
+fn repair_divided_unit_costs(conn: &Connection) -> rusqlite::Result<()> {
+    let already_repaired = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'unit_cost_division_repaired'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_some();
+    if already_repaired {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "
+        CREATE TEMP TABLE IF NOT EXISTS unit_cost_repairs (
+            product_id INTEGER PRIMARY KEY,
+            repaired_cost REAL NOT NULL
+        );
+        DELETE FROM unit_cost_repairs;
+
+        INSERT INTO unit_cost_repairs (product_id, repaired_cost)
+        SELECT p.id, u.price
+        FROM products p
+        JOIN product_updates u ON u.product_id = p.id
+        WHERE u.id = (
+            SELECT u2.id
+            FROM product_updates u2
+            WHERE u2.product_id = p.id
+              AND u2.status = 'added'
+              AND u2.quantity > 1
+              AND u2.price > 0
+            ORDER BY u2.date ASC, u2.id ASC
+            LIMIT 1
+        )
+          AND p.cost_per_quantity > 0
+          AND u.price > p.cost_per_quantity * 10
+          AND ABS(p.cost_per_quantity - (u.price / u.quantity)) < 0.0001;
+
+        UPDATE products
+        SET cost_per_quantity = (
+            SELECT repaired_cost
+            FROM unit_cost_repairs
+            WHERE product_id = products.id
+        )
+        WHERE id IN (SELECT product_id FROM unit_cost_repairs);
+
+        UPDATE sale_items
+        SET cost_at_sale = (
+            SELECT repaired_cost
+            FROM unit_cost_repairs
+            WHERE product_id = sale_items.product_id
+        )
+        WHERE product_id IN (SELECT product_id FROM unit_cost_repairs)
+          AND cost_at_sale > 0
+          AND cost_at_sale * 10 < (
+            SELECT repaired_cost
+            FROM unit_cost_repairs
+            WHERE product_id = sale_items.product_id
+          );
+
+        DROP TABLE unit_cost_repairs;
+        ",
+    )?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('unit_cost_division_repaired', ?1)",
+        params![now_iso()],
+    )?;
+    Ok(())
+}
+
+fn repair_unit_purchase_totals(conn: &Connection) -> rusqlite::Result<()> {
+    let already_repaired = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'unit_purchase_totals_repaired'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_some();
+    if already_repaired {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "
+        CREATE TEMP TABLE IF NOT EXISTS unit_purchase_total_repairs (
+            update_id INTEGER PRIMARY KEY,
+            repaired_total REAL NOT NULL
+        );
+        DELETE FROM unit_purchase_total_repairs;
+
+        INSERT INTO unit_purchase_total_repairs (update_id, repaired_total)
+        SELECT u.id, u.price * u.quantity
+        FROM product_updates u
+        JOIN products p ON p.id = u.product_id
+        WHERE u.status = 'added'
+          AND u.quantity > 1
+          AND u.price > 0
+          AND p.cost_per_quantity > 0
+          AND ABS(u.price - p.cost_per_quantity) <= CASE
+                WHEN p.cost_per_quantity * 0.001 > 0.01 THEN p.cost_per_quantity * 0.001
+                ELSE 0.01
+              END;
+
+        UPDATE product_updates
+        SET price = (
+            SELECT repaired_total
+            FROM unit_purchase_total_repairs
+            WHERE update_id = product_updates.id
+        )
+        WHERE id IN (SELECT update_id FROM unit_purchase_total_repairs);
+
+        DROP TABLE unit_purchase_total_repairs;
+        ",
+    )?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('unit_purchase_totals_repaired', ?1)",
+        params![now_iso()],
+    )?;
+    Ok(())
+}
+
+fn repair_sale_item_costs(conn: &Connection) -> rusqlite::Result<()> {
+    let already_repaired = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'sale_item_costs_repaired'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_some();
+    if already_repaired {
+        return Ok(());
+    }
+
+    conn.execute(
+        "UPDATE sale_items
+         SET cost_at_sale = (
+            SELECT p.cost_per_quantity
+            FROM products p
+            WHERE p.id = sale_items.product_id
+         )
+         WHERE EXISTS (
+            SELECT 1
+            FROM products p
+            WHERE p.id = sale_items.product_id
+              AND p.cost_per_quantity > 0
+              AND (sale_items.cost_at_sale <= 0 OR sale_items.cost_at_sale * 10 < p.cost_per_quantity)
+         )",
+        [],
+    )?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('sale_item_costs_repaired', ?1)",
+        params![now_iso()],
+    )?;
+    Ok(())
+}
+
+fn bootstrap_missing_stock_batches(conn: &Connection) -> rusqlite::Result<()> {
+    let already_bootstrapped = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'stock_batches_bootstrapped'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .is_some();
+    if already_bootstrapped {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "
+        INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
+        SELECT p.id,
+               'opening-stock',
+               '',
+               p.quantity - COALESCE((
+                    SELECT SUM(sb.quantity)
+                    FROM stock_batches sb
+                    WHERE sb.product_id = p.id
+               ), 0),
+               p.cost_per_quantity,
+               p.date
+        FROM products p
+        WHERE p.quantity > COALESCE((
+                SELECT SUM(sb.quantity)
+                FROM stock_batches sb
+                WHERE sb.product_id = p.id
+            ), 0)
+          AND p.quantity > 0;
+        ",
+    )?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value) VALUES ('stock_batches_bootstrapped', ?1)",
+        params![now_iso()],
+    )?;
+    Ok(())
+}
+
 fn find_legacy_database(app: &tauri::AppHandle) -> Option<PathBuf> {
     let mut candidates = Vec::new();
 
@@ -2649,7 +3221,12 @@ fn find_legacy_database(app: &tauri::AppHandle) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn add_column_if_missing(conn: &Connection, table: &str, column: &str, definition: &str) -> rusqlite::Result<()> {
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for existing in columns {
@@ -2657,7 +3234,10 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, definitio
             return Ok(());
         }
     }
-    conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"), [])?;
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
+    )?;
     Ok(())
 }
 
@@ -2683,7 +3263,11 @@ fn product_ids(conn: &Connection, market_id: i64) -> Result<Vec<i64>, String> {
     collect_vec(rows)
 }
 
-fn category_belongs_to_market(conn: &Connection, category_id: i64, market_id: i64) -> Result<bool, String> {
+fn category_belongs_to_market(
+    conn: &Connection,
+    category_id: i64,
+    market_id: i64,
+) -> Result<bool, String> {
     conn.query_row(
         "SELECT 1 FROM categories WHERE id = ?1 AND market_id = ?2",
         params![category_id, market_id],
@@ -2694,7 +3278,11 @@ fn category_belongs_to_market(conn: &Connection, category_id: i64, market_id: i6
     .map_err(|err| err.to_string())
 }
 
-fn product_belongs_to_market(conn: &Connection, product_id: i64, market_id: i64) -> Result<bool, String> {
+fn product_belongs_to_market(
+    conn: &Connection,
+    product_id: i64,
+    market_id: i64,
+) -> Result<bool, String> {
     conn.query_row(
         "SELECT 1
          FROM products p
@@ -2745,7 +3333,11 @@ fn month_income(conn: &Connection, market_id: i64) -> Result<f64, String> {
     Ok(sales + legacy - month_returns(conn, market_id)?)
 }
 
-fn sum_update_quantities_market(conn: &Connection, market_id: i64, status: &str) -> Result<f64, String> {
+fn sum_update_quantities_market(
+    conn: &Connection,
+    market_id: i64,
+    status: &str,
+) -> Result<f64, String> {
     let prefix = current_month_prefix();
     conn.query_row(
         "SELECT COALESCE(SUM(u.quantity), 0)
@@ -2769,6 +3361,23 @@ fn month_expenses(conn: &Connection, market_id: i64) -> Result<f64, String> {
     .map_err(|err| err.to_string())
 }
 
+fn month_inventory_purchases(conn: &Connection, market_id: i64) -> Result<f64, String> {
+    let prefix = current_month_prefix();
+    conn.query_row(
+        "SELECT COALESCE(SUM(u.price), 0)
+         FROM product_updates u
+         JOIN products p ON p.id = u.product_id
+         JOIN categories c ON c.id = p.category_id
+         WHERE c.market_id = ?1
+           AND u.status = 'added'
+           AND u.price > 0
+           AND u.date LIKE ?2",
+        params![market_id, format!("{prefix}%")],
+        |row| row.get::<_, f64>(0),
+    )
+    .map_err(|err| err.to_string())
+}
+
 fn sum_sales_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Result<f64, String> {
     let month = current_month_prefix();
     conn.query_row(
@@ -2785,7 +3394,11 @@ fn sum_sales_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Resul
     .map_err(|err| err.to_string())
 }
 
-fn sum_legacy_updates_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Result<f64, String> {
+fn sum_legacy_updates_until(
+    conn: &Connection,
+    market_id: i64,
+    end_prefix: &str,
+) -> Result<f64, String> {
     let month = current_month_prefix();
     conn.query_row(
         "SELECT COALESCE(SUM(u.price), 0)
@@ -2794,7 +3407,11 @@ fn sum_legacy_updates_until(conn: &Connection, market_id: i64, end_prefix: &str)
          JOIN categories c ON c.id = p.category_id
          WHERE c.market_id = ?1 AND u.status = 'subed' AND u.sale_item_id IS NULL
            AND u.date >= ?2 AND u.date <= ?3",
-        params![market_id, format!("{month}-01"), format!("{end_prefix}T23:59:59Z")],
+        params![
+            market_id,
+            format!("{month}-01"),
+            format!("{end_prefix}T23:59:59Z")
+        ],
         |row| row.get::<_, f64>(0),
     )
     .map_err(|err| err.to_string())
@@ -2808,7 +3425,11 @@ fn sum_cogs_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Result
              FROM sale_items i
              JOIN sales s ON s.id = i.sale_id
              WHERE s.market_id = ?1 AND s.created_at >= ?2 AND s.created_at <= ?3",
-            params![market_id, format!("{month}-01"), format!("{end_prefix}T23:59:59Z")],
+            params![
+                market_id,
+                format!("{month}-01"),
+                format!("{end_prefix}T23:59:59Z")
+            ],
             |row| row.get::<_, f64>(0),
         )
         .map_err(|err| err.to_string())?;
@@ -2820,7 +3441,11 @@ fn sum_cogs_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Result
              JOIN categories c ON c.id = p.category_id
              WHERE c.market_id = ?1 AND u.status = 'subed' AND u.sale_item_id IS NULL
                AND u.date >= ?2 AND u.date <= ?3",
-            params![market_id, format!("{month}-01"), format!("{end_prefix}T23:59:59Z")],
+            params![
+                market_id,
+                format!("{month}-01"),
+                format!("{end_prefix}T23:59:59Z")
+            ],
             |row| row.get::<_, f64>(0),
         )
         .map_err(|err| err.to_string())?;
@@ -2832,13 +3457,21 @@ fn sum_expenses_until(conn: &Connection, market_id: i64, end_prefix: &str) -> Re
     conn.query_row(
         "SELECT COALESCE(SUM(price), 0) FROM expenses
          WHERE market_id = ?1 AND date >= ?2 AND date <= ?3",
-        params![market_id, format!("{month}-01"), format!("{end_prefix}T23:59:59Z")],
+        params![
+            market_id,
+            format!("{month}-01"),
+            format!("{end_prefix}T23:59:59Z")
+        ],
         |row| row.get::<_, f64>(0),
     )
     .map_err(|err| err.to_string())
 }
 
-fn payments_from_body(body: &Value, payment_method: &str, total: f64) -> Result<Vec<(String, f64)>, String> {
+fn payments_from_body(
+    body: &Value,
+    payment_method: &str,
+    total: f64,
+) -> Result<Vec<(String, f64)>, String> {
     let mut payments = Vec::new();
     if let Some(items) = body.get("payments").and_then(Value::as_array) {
         for payment in items {
@@ -2873,7 +3506,12 @@ fn payments_from_body(body: &Value, payment_method: &str, total: f64) -> Result<
     Ok(payments)
 }
 
-fn ensure_supplier(conn: &Connection, market_id: i64, name: &str, phone: &str) -> Result<i64, String> {
+fn ensure_supplier(
+    conn: &Connection,
+    market_id: i64,
+    name: &str,
+    phone: &str,
+) -> Result<i64, String> {
     if let Some(id) = conn
         .query_row(
             "SELECT id FROM suppliers WHERE market_id = ?1 AND name = ?2 AND phone = ?3",
@@ -2894,7 +3532,209 @@ fn ensure_supplier(conn: &Connection, market_id: i64, name: &str, phone: &str) -
     Ok(conn.last_insert_rowid())
 }
 
-fn sales_grouped_by_day(conn: &Connection, market_id: i64, month_prefix: &str) -> Result<Vec<Value>, String> {
+fn ensure_product_stock_batch_coverage(
+    tx: &rusqlite::Transaction<'_>,
+    product_id: i64,
+) -> Result<(), String> {
+    let (product_quantity, cost_per_quantity, product_date) = tx
+        .query_row(
+            "SELECT quantity, cost_per_quantity, date FROM products WHERE id = ?1",
+            params![product_id],
+            |row| {
+                Ok((
+                    row.get::<_, f64>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(|err| err.to_string())?;
+    if product_quantity <= 0.0 {
+        return Ok(());
+    }
+    let batch_quantity: f64 = tx
+        .query_row(
+            "SELECT COALESCE(SUM(quantity), 0) FROM stock_batches WHERE product_id = ?1 AND quantity > 0",
+            params![product_id],
+            |row| row.get::<_, f64>(0),
+        )
+        .map_err(|err| err.to_string())?;
+    let missing_quantity = product_quantity - batch_quantity;
+    if missing_quantity > 0.000001 {
+        tx.execute(
+            "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
+             VALUES (?1, 'opening-stock', '', ?2, ?3, ?4)",
+            params![product_id, missing_quantity, cost_per_quantity, product_date],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn plan_stock_batch_allocations(
+    tx: &rusqlite::Transaction<'_>,
+    product_id: i64,
+    quantity: f64,
+) -> Result<Vec<StockBatchAllocation>, String> {
+    ensure_product_stock_batch_coverage(tx, product_id)?;
+    let mut stmt = tx
+        .prepare(
+            "SELECT id, quantity, cost_per_quantity
+             FROM stock_batches
+             WHERE product_id = ?1 AND quantity > 0
+             ORDER BY created_at ASC, id ASC",
+        )
+        .map_err(|err| err.to_string())?;
+    let rows = stmt
+        .query_map(params![product_id], |row| {
+            Ok(StockBatchAllocation {
+                batch_id: row.get::<_, i64>(0)?,
+                quantity: row.get::<_, f64>(1)?,
+                cost_per_quantity: row.get::<_, f64>(2)?,
+            })
+        })
+        .map_err(|err| err.to_string())?;
+
+    let mut remaining = quantity;
+    let mut allocations = Vec::new();
+    for row in rows {
+        if remaining <= 0.000001 {
+            break;
+        }
+        let batch = row.map_err(|err| err.to_string())?;
+        let allocated_quantity = batch.quantity.min(remaining);
+        if allocated_quantity > 0.0 {
+            allocations.push(StockBatchAllocation {
+                batch_id: batch.batch_id,
+                quantity: allocated_quantity,
+                cost_per_quantity: batch.cost_per_quantity,
+            });
+            remaining -= allocated_quantity;
+        }
+    }
+
+    if remaining > 0.000001 {
+        return Err("Omborda tannarx partiyalari yetarli emas".to_string());
+    }
+    Ok(allocations)
+}
+
+fn record_sale_item_batch_allocations(
+    tx: &rusqlite::Transaction<'_>,
+    sale_item_id: i64,
+    allocations: &[StockBatchAllocation],
+) -> Result<(), String> {
+    for allocation in allocations {
+        tx.execute(
+            "INSERT INTO sale_item_batches (sale_item_id, stock_batch_id, quantity, cost_per_quantity)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                sale_item_id,
+                allocation.batch_id,
+                allocation.quantity,
+                allocation.cost_per_quantity
+            ],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn consume_stock_batch_allocations(
+    tx: &rusqlite::Transaction<'_>,
+    allocations: &[StockBatchAllocation],
+) -> Result<(), String> {
+    for allocation in allocations {
+        tx.execute(
+            "UPDATE stock_batches SET quantity = quantity - ?1 WHERE id = ?2",
+            params![allocation.quantity, allocation.batch_id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn restore_returned_stock_batches(
+    tx: &rusqlite::Transaction<'_>,
+    sale_item_id: i64,
+    product_id: i64,
+    sold_quantity: f64,
+    return_quantity: f64,
+) -> Result<(), String> {
+    let mut stmt = tx
+        .prepare(
+            "SELECT stock_batch_id, quantity, cost_per_quantity
+             FROM sale_item_batches
+             WHERE sale_item_id = ?1
+             ORDER BY id ASC",
+        )
+        .map_err(|err| err.to_string())?;
+    let rows = stmt
+        .query_map(params![sale_item_id], |row| {
+            Ok(StockBatchAllocation {
+                batch_id: row.get::<_, i64>(0)?,
+                quantity: row.get::<_, f64>(1)?,
+                cost_per_quantity: row.get::<_, f64>(2)?,
+            })
+        })
+        .map_err(|err| err.to_string())?;
+    let allocations = collect_vec(rows)?;
+
+    if allocations.is_empty() || sold_quantity <= 0.0 {
+        let cost_at_sale: f64 = tx
+            .query_row(
+                "SELECT cost_at_sale FROM sale_items WHERE id = ?1",
+                params![sale_item_id],
+                |row| row.get::<_, f64>(0),
+            )
+            .map_err(|err| err.to_string())?;
+        tx.execute(
+            "INSERT INTO stock_batches (product_id, batch_number, expiry_date, quantity, cost_per_quantity, created_at)
+             VALUES (?1, 'returned-stock', '', ?2, ?3, ?4)",
+            params![product_id, return_quantity, cost_at_sale, now_iso()],
+        )
+        .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+
+    let mut restored = 0.0;
+    for allocation in allocations {
+        let restore_quantity = return_quantity * (allocation.quantity / sold_quantity);
+        if restore_quantity <= 0.0 {
+            continue;
+        }
+        restored += restore_quantity;
+        tx.execute(
+            "UPDATE stock_batches SET quantity = quantity + ?1 WHERE id = ?2",
+            params![restore_quantity, allocation.batch_id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    let rounding_gap = return_quantity - restored;
+    if rounding_gap.abs() > 0.000001 {
+        tx.execute(
+            "UPDATE stock_batches
+             SET quantity = quantity + ?1
+             WHERE id = (
+                SELECT stock_batch_id
+                FROM sale_item_batches
+                WHERE sale_item_id = ?2
+                ORDER BY id ASC
+                LIMIT 1
+             )",
+            params![rounding_gap, sale_item_id],
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn sales_grouped_by_day(
+    conn: &Connection,
+    market_id: i64,
+    month_prefix: &str,
+) -> Result<Vec<Value>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT substr(s.created_at, 1, 10) AS day,
@@ -2952,7 +3792,9 @@ fn make_purchase_invoice_number(market_id: i64) -> String {
     )
 }
 
-fn collect_vec<T>(rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>) -> Result<Vec<T>, String> {
+fn collect_vec<T>(
+    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>,
+) -> Result<Vec<T>, String> {
     let mut values = Vec::new();
     for row in rows {
         values.push(row.map_err(|err| err.to_string())?);
@@ -2960,7 +3802,9 @@ fn collect_vec<T>(rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) 
     Ok(values)
 }
 
-fn collect_rows(rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<Value>>) -> Result<ApiResponse, String> {
+fn collect_rows(
+    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<Value>>,
+) -> Result<ApiResponse, String> {
     ok_result(json!(collect_vec(rows)?))
 }
 
@@ -3056,19 +3900,30 @@ fn image_value(body: &Value) -> Option<String> {
 
 fn integer(body: &Value, key: &str) -> i64 {
     body.get(key)
-        .and_then(|value| value.as_i64().or_else(|| value.as_str()?.parse::<i64>().ok()))
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str()?.parse::<i64>().ok())
+        })
         .unwrap_or(0)
 }
 
 fn number(body: &Value, key: &str) -> f64 {
     body.get(key)
-        .and_then(|value| value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok()))
+        .and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_str()?.parse::<f64>().ok())
+        })
         .unwrap_or(0.0)
 }
 
 fn number_optional(body: &Value, key: &str) -> Option<f64> {
-    body.get(key)
-        .and_then(|value| value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok()))
+    body.get(key).and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_str()?.parse::<f64>().ok())
+    })
 }
 
 fn number_default(body: &Value, key: &str, fallback: f64) -> f64 {

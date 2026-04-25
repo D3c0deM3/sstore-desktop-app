@@ -44,6 +44,10 @@ const EditProductModal = ({
 
   if (!show) return null;
   const existingImageSrc = resolveMediaUrl(form?.image_url || form?.image);
+  const formatMoney = (value) =>
+    `${Number(value || 0).toLocaleString("uz-UZ")} UZS`;
+  const stockCostValue =
+    Number(form?.quantity || 0) * Number(form?.cost_per_quantity || 0);
 
   return (
     <div
@@ -68,9 +72,9 @@ const EditProductModal = ({
           borderRadius: 20,
           boxShadow: "0 12px 48px rgba(0,0,0,0.22)",
           padding: "48px 40px 36px 40px",
-          minWidth: 600,
+          minWidth: 760,
           maxWidth: "98vw",
-          width: 700,
+          width: 920,
           textAlign: "center",
           fontFamily: "Inter, Segoe UI, Arial, sans-serif",
           position: "relative",
@@ -411,9 +415,9 @@ const EditProductModal = ({
             <div
               className="edit-form"
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 22,
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 18,
                 marginBottom: 18,
               }}
             >
@@ -543,6 +547,98 @@ const EditProductModal = ({
                     color: "var(--modal-label-color, #fff)",
                   }}
                 >
+                  Minimal qoldiq
+                </label>
+                <input
+                  type="number"
+                  value={form?.min_quantity || ""}
+                  onChange={(e) =>
+                    onFieldChange("min_quantity", e.target.value)
+                  }
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e0e0e0",
+                    fontSize: 16,
+                    background: "var(--modal-input-bg, #fff)",
+                    color: "#222",
+                    outline: "none",
+                    transition: "border 0.18s",
+                    marginTop: 2,
+                    MozAppearance: "textfield",
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  onWheel={(e) => e.target.blur()}
+                  onKeyDown={(e) =>
+                    (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+                    e.preventDefault()
+                  }
+                />
+              </div>
+              <div className="form-group" style={{ textAlign: "left" }}>
+                <label
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 15,
+                    marginBottom: 6,
+                    display: "block",
+                    color: "var(--modal-label-color, #fff)",
+                  }}
+                >
+                  Kelgan narx / Tannarx
+                </label>
+                <input
+                  type="number"
+                  value={form?.cost_per_quantity || ""}
+                  onChange={(e) =>
+                    onFieldChange("cost_per_quantity", e.target.value)
+                  }
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e0e0e0",
+                    fontSize: 16,
+                    background: "var(--modal-input-bg, #fff)",
+                    color: "#222",
+                    outline: "none",
+                    transition: "border 0.18s",
+                    marginTop: 2,
+                    MozAppearance: "textfield",
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  onWheel={(e) => e.target.blur()}
+                  onKeyDown={(e) =>
+                    (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+                    e.preventDefault()
+                  }
+                  placeholder="1 kg/dona/litr uchun tannarx"
+                />
+                <div
+                  style={{
+                    color: "var(--color-text-secondary, #94a3b8)",
+                    fontSize: 13,
+                    marginTop: 6,
+                  }}
+                >
+                  Ombordagi tannarx qiymati: {formatMoney(stockCostValue)}
+                </div>
+              </div>
+              <div className="form-group" style={{ textAlign: "left" }}>
+                <label
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 15,
+                    marginBottom: 6,
+                    display: "block",
+                    color: "var(--modal-label-color, #fff)",
+                  }}
+                >
                   Narx
                 </label>
                 <input
@@ -611,6 +707,73 @@ const EditProductModal = ({
                   <option value="metr">metr</option>
                   <option value="litr">litr</option>
                 </select>
+              </div>
+              <div className="form-group" style={{ textAlign: "left" }}>
+                <label
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 15,
+                    marginBottom: 6,
+                    display: "block",
+                    color: "var(--modal-label-color, #fff)",
+                  }}
+                >
+                  Status
+                </label>
+                <select
+                  value={form?.status || "available"}
+                  onChange={(e) => onFieldChange("status", e.target.value)}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e0e0e0",
+                    fontSize: 16,
+                    background: "var(--modal-input-bg, #fff)",
+                    color: "#222",
+                    outline: "none",
+                    transition: "border 0.18s",
+                    marginTop: 2,
+                    appearance: "none",
+                  }}
+                >
+                  <option value="available">Bor</option>
+                  <option value="few">Kam qolgan</option>
+                  <option value="ended">Mavjud emas</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ textAlign: "left" }}>
+                <label
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 15,
+                    marginBottom: 6,
+                    display: "block",
+                    color: "var(--modal-label-color, #fff)",
+                  }}
+                >
+                  Barcode
+                </label>
+                <input
+                  type="text"
+                  value={form?.barcode || ""}
+                  onChange={(e) => onFieldChange("barcode", e.target.value)}
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1.5px solid #e0e0e0",
+                    fontSize: 16,
+                    background: "var(--modal-input-bg, #fff)",
+                    color: "#222",
+                    outline: "none",
+                    transition: "border 0.18s",
+                    marginTop: 2,
+                  }}
+                  placeholder="Masalan: 478..."
+                />
               </div>
             </div>
           </div>

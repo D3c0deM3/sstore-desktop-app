@@ -14,6 +14,7 @@ import {
 } from "chart.js";
 import "../styles/DashboardPage.css";
 import ProfileSection from "../components/ProfileSection";
+import ProductImagePlaceholder from "../components/ProductImagePlaceholder";
 import { resolveMediaUrl } from "../utils/imageSource";
 
 ChartJS.register(
@@ -753,7 +754,7 @@ const DashboardPage = () => {
                     }}
                     onClick={() => handleSuggestionClick(product.id)}
                   >
-                    {imageSrc && (
+                    {imageSrc ? (
                       <img
                         src={imageSrc}
                         alt={product.name}
@@ -762,6 +763,14 @@ const DashboardPage = () => {
                           height: 32,
                           borderRadius: 6,
                           objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <ProductImagePlaceholder
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
                         }}
                       />
                     )}
@@ -854,17 +863,18 @@ const DashboardPage = () => {
                             gap: 10,
                           }}
                         >
-                          {imageSrc && (
+                          {imageSrc ? (
                             <img
                               src={imageSrc}
                               alt={product.name}
                               className="product-table-thumb"
                             />
+                          ) : (
+                            <ProductImagePlaceholder className="product-table-thumb" />
                           )}
                           <span
                             style={{
-                              marginLeft:
-                                imageSrc ? 14 : 0,
+                              marginLeft: 14,
                             }}
                           >
                             {product.name}

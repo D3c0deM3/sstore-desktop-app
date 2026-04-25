@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import "../styles/ProductsPage.css";
 import "../styles/SellPage.css";
 import deleteIcon from "../assets/dashboard/delete.svg";
+import ProductImagePlaceholder from "../components/ProductImagePlaceholder";
 import { resolveMediaUrl } from "../utils/imageSource";
 
 const SellPage = () => {
@@ -295,6 +296,7 @@ const SellPage = () => {
     if (override && override.nativeEvent) {
       override = {};
     }
+    const { skipReceipt = false, ...requestOverride } = override;
     if (cartItems.length === 0) return;
     setLoading(true);
     setShowError(false);
@@ -309,7 +311,7 @@ const SellPage = () => {
       quantity: item.quantity,
       discount: Number(item.discount || 0),
     }));
-    const method = override.payment_method || paymentMethod;
+    const method = requestOverride.payment_method || paymentMethod;
     const payments = buildPaymentPayload(method);
     try {
       const response = await fetch(url, {
@@ -325,12 +327,12 @@ const SellPage = () => {
           paid_amount:
             method === "debt" ? 0 : method === "mixed" ? undefined : getTotalPrice(),
           payments,
-          ...override,
+          ...requestOverride,
         }),
       });
       if (response.status === 200) {
         const data = await response.json().catch(() => ({}));
-        setReceipt(data.receipt || null);
+        setReceipt(skipReceipt ? null : data.receipt || null);
         setShowSuccess(true);
         setCartItems([]);
         setCartDiscount("");
@@ -594,9 +596,7 @@ const SellPage = () => {
                         className="sell-page-product-img"
                       />
                     ) : (
-                      <div className="sell-page-product-img sell-page-image-placeholder">
-                        {product.name?.slice(0, 1)}
-                      </div>
+                      <ProductImagePlaceholder className="sell-page-product-img sell-page-image-placeholder" />
                     )}
                     <div className="sell-page-product-name">{product.name}</div>
                     <div className="sell-page-product-price">
@@ -731,9 +731,7 @@ const SellPage = () => {
                     className="sell-page-cart-item-img"
                   />
                 ) : (
-                  <div className="sell-page-cart-item-img sell-page-image-placeholder">
-                    {item.name?.slice(0, 1)}
-                  </div>
+                  <ProductImagePlaceholder className="sell-page-cart-item-img sell-page-image-placeholder" />
                 )}
                 <div
                   className="sell-page-cart-item-info"
@@ -981,7 +979,13 @@ const SellPage = () => {
             {formatPrice(getTotalPrice())}
           </span>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+          }}
+        >
           <button
             className="sell-page-cart-pay-btn"
             onClick={handlePay}
@@ -1058,6 +1062,30 @@ const SellPage = () => {
             }
           >
             Qarz
+          </button>
+          <button
+            className="sell-page-cart-pay-btn"
+            onClick={() => handlePay({ skipReceipt: true })}
+            disabled={loading || cartItems.length === 0}
+            style={{
+              gridColumn: "1 / -1",
+              opacity: loading || cartItems.length === 0 ? 0.7 : 1,
+              position: "relative",
+              background: cartItems.length === 0 ? "#7a8e8e" : "#334155",
+              cursor: loading || cartItems.length === 0 ? "not-allowed" : "pointer",
+            }}
+            onMouseEnter={
+              loading || cartItems.length === 0
+                ? undefined
+                : (e) => (e.target.style.backgroundColor = "#475569")
+            }
+            onMouseLeave={
+              loading || cartItems.length === 0
+                ? undefined
+                : (e) => (e.target.style.backgroundColor = "#334155")
+            }
+          >
+            Chek chiqarmay sotish
           </button>
         </div>
       </div>

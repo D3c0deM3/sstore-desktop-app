@@ -673,7 +673,7 @@ const AddProductModal = ({
                     position: "relative",
                   }}
                 >
-                  <span>Sotib olingan narxi</span>
+                  <span>Tannarx</span>
                   <span
                     style={{
                       marginLeft: 6,
@@ -731,8 +731,8 @@ const AddProductModal = ({
                         textAlign: "left",
                       }}
                     >
-                      Mahsulotni sotib olganingizdagi narx. Faqat son. Masalan:
-                      8000.
+                      1 kg, dona yoki litr uchun sotib olingan tannarx.
+                      Masalan: 8000.
                     </span>
                   </span>
                 </label>
@@ -755,6 +755,19 @@ const AddProductModal = ({
                   inputMode="numeric"
                   pattern="[0-9]*"
                 />
+                <div
+                  style={{
+                    color: "var(--color-text-secondary, #64748b)",
+                    fontSize: 13,
+                    marginTop: 6,
+                  }}
+                >
+                  Jami xarid:{" "}
+                  {(
+                    Number(form.bought_price || 0) * Number(form.quantity || 0)
+                  ).toLocaleString()}{" "}
+                  UZS
+                </div>
               </div>
               <div style={{ textAlign: "left" }}>
                 <label

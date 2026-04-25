@@ -239,10 +239,9 @@ html.dark .sell-page-product-selection .sell-page-product-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #eef2f7, #d8e1ea);
-  color: #4c7273;
-  font-weight: 800;
-  text-transform: uppercase;
+  background: #f8fafc;
+  color: #d1d5db;
+  border: 1.5px solid #e5e7eb;
 }
 
 .sell-page-product-name {

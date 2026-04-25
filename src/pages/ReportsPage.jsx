@@ -3,77 +3,172 @@ import "../styles/ToolPages.css";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || "";
 
-const formatCurrency = (value) => `${Number(value || 0).toLocaleString()} UZS`;
+const formatCurrency = (value) =>
+  `${Number(value || 0).toLocaleString("uz-UZ")} UZS`;
 
-const pickDashboardValue = (dashboardData, key, fallback) => {
-  const source = Array.isArray(dashboardData) ? dashboardData : [];
-  const item = source.find((entry) => entry[key] !== undefined);
-  return item ? item[key] : fallback;
+const formatNumber = (value) => Number(value || 0).toLocaleString("uz-UZ");
+
+const asArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.products)) return value.products;
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap((entry) => (Array.isArray(entry) ? entry : []));
+  }
+  return [];
 };
 
-const emptyPurchase = {
-  product_id: "",
-  quantity: "",
-  price: "",
-  supplier_name: "",
-  supplier_phone: "",
-  invoice_number: "",
-  batch_number: "",
-  expiry_date: "",
+const dateKey = (value) => {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const shiftDate = (days) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return dateKey(date);
+};
+
+const formatDateTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("uz-UZ", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const paymentLabels = {
+  cash: "Naqd",
+  card: "Karta",
+  transfer: "O'tkazma",
+  mixed: "Aralash",
+  debt: "Qarz",
+};
+
+const getProductId = (item) => item.product ?? item.product_id ?? item.id;
+
+const getProductName = (item) =>
+  item.product_name || item.name || item.product?.name || `#${getProductId(item) || "-"}`;
+
+const getItemCostMeta = (item, productCostById) => {
+  const directCost = Number(
+    item.cost_at_sale ??
+      item.cost_per_quantity ??
+      item.unit_cost ??
+      item.cost_price ??
+      item.buy_price ??
+      item.purchase_cost ??
+      item.purchase_price ??
+      item.bought_price ??
+      0
+  );
+  const fallbackCost = Number(
+    item.current_cost_per_quantity || productCostById.get(Number(getProductId(item))) || 0
+  );
+  if (directCost > 0) {
+    if (fallbackCost > directCost * 10) {
+      return { unitCost: fallbackCost, estimated: true };
+    }
+    return { unitCost: directCost, estimated: Number(item.cost_at_sale || 0) <= 0 };
+  }
+
+  if (fallbackCost > 0) return { unitCost: fallbackCost, estimated: true };
+
+  const quantity = Number(item.quantity || 0);
+  const totalPrice = Number(item.total_price || 0);
+  const estimatedCost = quantity > 0 && totalPrice > 0 ? totalPrice / quantity : 0;
+  return { unitCost: estimatedCost, estimated: estimatedCost > 0 };
+};
+
+const getSaleMetrics = (sale, productCostById = new Map()) => {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const returns = Array.isArray(sale.returns) ? sale.returns : [];
+  let hasEstimatedCost = false;
+  const returnedAmount = returns.reduce(
+    (total, item) => total + Number(item.amount || 0),
+    0
+  );
+  const costOfGoods = items.reduce((total, item) => {
+    const soldQuantity = Number(item.quantity || 0);
+    const returnedQuantity = Number(item.returned_quantity || 0);
+    const netQuantity = Math.max(soldQuantity - returnedQuantity, 0);
+    const costMeta = getItemCostMeta(item, productCostById);
+    if (costMeta.estimated) {
+      hasEstimatedCost = true;
+    }
+    return total + netQuantity * costMeta.unitCost;
+  }, 0);
+  const revenue = Math.max(Number(sale.total || 0) - returnedAmount, 0);
+  const grossProfit = Number(sale.total || 0) - costOfGoods;
+  const netProfit = revenue - costOfGoods;
+
+  return {
+    revenue,
+    returnedAmount,
+    costOfGoods,
+    grossProfit,
+    netProfit,
+    hasEstimatedCost,
+    itemCount: items.reduce(
+      (total, item) => total + Number(item.quantity || 0),
+      0
+    ),
+  };
+};
+
+const emptyReport = {
+  date: "",
+  salesCount: 0,
+  itemCount: 0,
+  revenue: 0,
+  returnedAmount: 0,
+  costOfGoods: 0,
+  grossProfit: 0,
+  netProfit: 0,
+  hasEstimatedCost: false,
 };
 
 const ReportsPage = () => {
-  const [dashboardData, setDashboardData] = useState([]);
-  const [summaryReport, setSummaryReport] = useState(null);
-  const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [purchases, setPurchases] = useState([]);
-  const [expenseForm, setExpenseForm] = useState({ type: "salary", price: "" });
-  const [supplierForm, setSupplierForm] = useState({ name: "", phone: "" });
-  const [purchaseForm, setPurchaseForm] = useState(emptyPurchase);
-  const [auditForm, setAuditForm] = useState({ product_id: "", quantity: "", reason: "" });
-  const [returnForm, setReturnForm] = useState({ sale_item_id: "", quantity: "", reason: "" });
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [selectedSale, setSelectedSale] = useState(null);
 
-  const token = localStorage.getItem("token");
+  const loadSales = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setSales([]);
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
 
-  const authHeaders = {
-    "Content-Type": "application/json",
-    Authorization: `Token ${token}`,
-  };
-
-  const loadReports = async () => {
-    if (!token) return;
     setLoading(true);
     setError("");
     try {
-      const [dashboardRes, summaryRes, salesRes, suppliersRes, purchasesRes, productsRes] =
-        await Promise.all([
-          fetch(`${apiBaseUrl}/api/dashboard/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${apiBaseUrl}/api/reports/summary/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${apiBaseUrl}/api/sales/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${apiBaseUrl}/api/suppliers/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${apiBaseUrl}/api/purchases/`, { headers: { Authorization: `Token ${token}` } }),
-          fetch(`${apiBaseUrl}/api/products/`, { headers: { Authorization: `Token ${token}` } }),
-        ]);
-
-      if (!dashboardRes.ok) throw new Error("Hisobot ma'lumotlari olinmadi");
-      const dashboard = await dashboardRes.json();
-      const summaryData = summaryRes.ok ? await summaryRes.json() : null;
-      const salesData = salesRes.ok ? await salesRes.json() : [];
-      const suppliersData = suppliersRes.ok ? await suppliersRes.json() : [];
-      const purchasesData = purchasesRes.ok ? await purchasesRes.json() : [];
-      const productsData = productsRes.ok ? await productsRes.json() : {};
-
-      setDashboardData(Array.isArray(dashboard) ? dashboard : []);
-      setSummaryReport(summaryData && !Array.isArray(summaryData) ? summaryData : null);
+      const [salesResponse, productsResponse] = await Promise.all([
+        fetch(`${apiBaseUrl}/api/sales/`, {
+          headers: { Authorization: `Token ${token}` },
+        }),
+        fetch(`${apiBaseUrl}/api/products/`, {
+          headers: { Authorization: `Token ${token}` },
+        }),
+      ]);
+      const salesData = await salesResponse.json().catch(() => []);
+      const productsData = await productsResponse.json().catch(() => []);
+      if (!salesResponse.ok) {
+        throw new Error(salesData.error || "Sotuv hisobotlari olinmadi");
+      }
       setSales(Array.isArray(salesData) ? salesData : []);
-      setSuppliers(Array.isArray(suppliersData) ? suppliersData : []);
-      setPurchases(Array.isArray(purchasesData) ? purchasesData : []);
-      setProducts(Array.isArray(productsData.products) ? productsData.products : []);
+      setProducts(productsResponse.ok ? asArray(productsData) : []);
     } catch (err) {
       setError(err.message || "Hisobotni yuklashda xatolik yuz berdi");
     } finally {
@@ -82,390 +177,430 @@ const ReportsPage = () => {
   };
 
   useEffect(() => {
-    loadReports();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadSales();
   }, []);
 
-  const summary = useMemo(() => {
-    const dashboardProducts = pickDashboardValue(dashboardData, "products", []);
-    const lowStock = summaryReport?.low_stock || dashboardProducts.filter(
-      (product) => Number(product.quantity) <= Number(product.min_quantity || 50)
-    );
-    return {
-      productsCount: pickDashboardValue(dashboardData, "quantity", 0),
-      netProfit: summaryReport?.monthly_profit ?? pickDashboardValue(dashboardData, "profit", []).at?.(-1) ?? 0,
-      income: summaryReport?.income ?? pickDashboardValue(dashboardData, "income", 0),
-      expensesTotal: summaryReport?.expenses_total ?? pickDashboardValue(dashboardData, "expanses_total", 0),
-      returnsTotal: summaryReport?.returns_total || 0,
-      topProducts: (summaryReport?.top_products || pickDashboardValue(dashboardData, "products_by_sells", [])).slice(0, 6),
-      lowStock: lowStock.slice(0, 8),
-      deadStock: (summaryReport?.dead_stock || []).slice(0, 8),
-      dailySales: summaryReport?.daily_sales || [],
-      debtReport: summaryReport?.debt_report || [],
-    };
-  }, [dashboardData, summaryReport]);
+  const productCostById = useMemo(() => {
+    const costs = new Map();
+    products.forEach((product) => {
+      costs.set(
+        Number(product.id),
+        Number(
+          product.cost_per_quantity ||
+            product.cost_price ||
+            product.buy_price ||
+            product.purchase_cost ||
+            product.purchase_price ||
+            product.bought_price ||
+            0
+        )
+      );
+    });
+    return costs;
+  }, [products]);
 
-  const saleItems = useMemo(
+  const reports = useMemo(() => {
+    const byDay = new Map();
+
+    sales.forEach((sale) => {
+      const key = dateKey(sale.created_at);
+      if (!key) return;
+
+      const current = byDay.get(key) || { ...emptyReport, date: key };
+      const metrics = getSaleMetrics(sale, productCostById);
+
+      byDay.set(key, {
+        date: key,
+        salesCount: current.salesCount + 1,
+        itemCount: current.itemCount + metrics.itemCount,
+        revenue: current.revenue + metrics.revenue,
+        returnedAmount: current.returnedAmount + metrics.returnedAmount,
+        costOfGoods: current.costOfGoods + metrics.costOfGoods,
+        grossProfit: current.grossProfit + metrics.grossProfit,
+        netProfit: current.netProfit + metrics.netProfit,
+        hasEstimatedCost: current.hasEstimatedCost || metrics.hasEstimatedCost,
+      });
+    });
+
+    return Array.from(byDay.values()).sort((a, b) =>
+      b.date.localeCompare(a.date)
+    );
+  }, [sales, productCostById]);
+
+  const totals = useMemo(
     () =>
-      sales.flatMap((sale) =>
-        (sale.items || []).map((item) => ({
-          ...item,
-          saleReceipt: sale.receipt_number,
-          saleDate: sale.created_at,
-        }))
+      reports.reduce(
+        (total, row) => ({
+          ...total,
+          salesCount: total.salesCount + row.salesCount,
+          itemCount: total.itemCount + row.itemCount,
+          revenue: total.revenue + row.revenue,
+          returnedAmount: total.returnedAmount + row.returnedAmount,
+          costOfGoods: total.costOfGoods + row.costOfGoods,
+          grossProfit: total.grossProfit + row.grossProfit,
+          netProfit: total.netProfit + row.netProfit,
+          hasEstimatedCost: total.hasEstimatedCost || row.hasEstimatedCost,
+        }),
+        { ...emptyReport }
       ),
-    [sales]
+    [reports]
   );
 
-  const postJson = async (path, body) => {
-    const response = await fetch(`${apiBaseUrl}${path}`, {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || data.message || "So'rov bajarilmadi");
-    return data;
-  };
+  const todayReport =
+    reports.find((report) => report.date === shiftDate(0)) || {
+      ...emptyReport,
+      date: shiftDate(0),
+    };
+  const yesterdayReport =
+    reports.find((report) => report.date === shiftDate(-1)) || {
+      ...emptyReport,
+      date: shiftDate(-1),
+    };
 
-  const handleSaveExpense = async (event) => {
-    event.preventDefault();
-    if (!expenseForm.price) return;
-    setSaving(true);
-    try {
-      await postJson("/api/expense/add/", {
-        type: expenseForm.type,
-        price: Number(expenseForm.price),
-      });
-      setExpenseForm({ type: "salary", price: "" });
-      await loadReports();
-    } catch (err) {
-      setError(err.message || "Xarajatni saqlashda xatolik");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const salesWithMetrics = useMemo(
+    () =>
+      [...sales]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .map((sale) => ({
+          ...sale,
+          metrics: getSaleMetrics(sale, productCostById),
+        })),
+    [sales, productCostById]
+  );
 
-  const handleSaveSupplier = async (event) => {
-    event.preventDefault();
-    if (!supplierForm.name.trim()) return;
-    setSaving(true);
-    try {
-      await postJson("/api/suppliers/create/", supplierForm);
-      setSupplierForm({ name: "", phone: "" });
-      await loadReports();
-    } catch (err) {
-      setError(err.message || "Yetkazib beruvchi saqlanmadi");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSavePurchase = async (event) => {
-    event.preventDefault();
-    if (!purchaseForm.product_id || !purchaseForm.quantity || !purchaseForm.price) return;
-    setSaving(true);
-    try {
-      await postJson("/api/purchases/create/", {
-        ...purchaseForm,
-        product_id: Number(purchaseForm.product_id),
-        quantity: Number(purchaseForm.quantity),
-        price: Number(purchaseForm.price),
-      });
-      setPurchaseForm(emptyPurchase);
-      await loadReports();
-    } catch (err) {
-      setError(err.message || "Kirim saqlanmadi");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveAudit = async (event) => {
-    event.preventDefault();
-    if (!auditForm.product_id || auditForm.quantity === "") return;
-    setSaving(true);
-    try {
-      await postJson("/api/inventory/audit/", {
-        product_id: Number(auditForm.product_id),
-        quantity: Number(auditForm.quantity),
-        reason: auditForm.reason || "manual_adjustment",
-      });
-      setAuditForm({ product_id: "", quantity: "", reason: "" });
-      await loadReports();
-    } catch (err) {
-      setError(err.message || "Inventar tuzatish saqlanmadi");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveReturn = async (event) => {
-    event.preventDefault();
-    if (!returnForm.sale_item_id || !returnForm.quantity) return;
-    setSaving(true);
-    try {
-      await postJson("/api/returns/", {
-        sale_item_id: Number(returnForm.sale_item_id),
-        quantity: Number(returnForm.quantity),
-        reason: returnForm.reason || "return",
-      });
-      setReturnForm({ sale_item_id: "", quantity: "", reason: "" });
-      await loadReports();
-    } catch (err) {
-      setError(err.message || "Qaytarish saqlanmadi");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDownloadProducts = async () => {
-    const response = await fetch(`${apiBaseUrl}/api/products/report/`, {
-      headers: { Authorization: `Token ${token}` },
-    });
-    if (!response.ok) return;
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = response.headers.get("content-type")?.includes("text/csv")
-      ? "products_report.csv"
-      : "products_report.xlsx";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  };
-
-  if (loading) return <div className="tool-page-state">Hisobotlar yuklanmoqda...</div>;
+  if (loading) {
+    return <div className="tool-page-state">Hisobotlar yuklanmoqda...</div>;
+  }
 
   return (
-    <main className="tool-page">
+    <main className="tool-page reports-page">
       <header className="tool-header">
         <div>
           <h1>Hisobotlar</h1>
-          <p>Kunlik savdo, foyda, ombor, qarz va kirimlarni boshqaring.</p>
+          <p>Kunlik sotuv tarixi, sof foyda va umumiy savdo ko'rsatkichlari.</p>
         </div>
-        <button className="tool-primary-button" onClick={handleDownloadProducts}>
-          Mahsulot hisobotini yuklash
+        <button className="tool-primary-button" onClick={loadSales}>
+          Yangilash
         </button>
       </header>
 
       {error && <div className="tool-alert">{error}</div>}
 
-      <section className="tool-metric-grid">
+      <section className="tool-metric-grid reports-metric-grid">
+        <div className="tool-metric-card positive">
+          <span>Bugungi sof foyda</span>
+          <strong>{formatCurrency(todayReport.netProfit)}</strong>
+        </div>
         <div className="tool-metric-card">
-          <span>Ombordagi mahsulot</span>
-          <strong>{Number(summary.productsCount).toLocaleString()}</strong>
+          <span>Bugungi sotuvlar soni</span>
+          <strong>{formatNumber(todayReport.salesCount)}</strong>
         </div>
         <div className="tool-metric-card positive">
-          <span>Sof foyda</span>
-          <strong>{formatCurrency(summary.netProfit)}</strong>
+          <span>Umumiy sof foyda</span>
+          <strong>{formatCurrency(totals.netProfit)}</strong>
         </div>
         <div className="tool-metric-card">
-          <span>Daromad</span>
-          <strong>{formatCurrency(summary.income)}</strong>
-        </div>
-        <div className="tool-metric-card danger">
-          <span>Xarajat</span>
-          <strong>{formatCurrency(summary.expensesTotal)}</strong>
-        </div>
-        <div className="tool-metric-card danger">
-          <span>Qaytarilgan</span>
-          <strong>{formatCurrency(summary.returnsTotal)}</strong>
+          <span>Umumiy sotuv</span>
+          <strong>{formatCurrency(totals.revenue)}</strong>
         </div>
       </section>
 
       <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Tezkor xarajat</h2>
-          <form className="tool-form" onSubmit={handleSaveExpense}>
-            <select value={expenseForm.type} onChange={(event) => setExpenseForm((prev) => ({ ...prev, type: event.target.value }))}>
-              <option value="salary">Maosh</option>
-              <option value="rent">Ijara</option>
-              <option value="tax">Soliq</option>
-              <option value="ad">Reklama</option>
-              <option value="communal">Komunal to'lovlar</option>
-              <option value="other">Boshqa</option>
-            </select>
-            <input type="number" min="0" placeholder="Summa" value={expenseForm.price} onChange={(event) => setExpenseForm((prev) => ({ ...prev, price: event.target.value }))} />
-            <button type="submit" disabled={saving}>{saving ? "Saqlanmoqda..." : "Saqlash"}</button>
-          </form>
-        </div>
-
-        <div className="tool-panel">
-          <h2>Yetkazib beruvchi</h2>
-          <form className="tool-form" onSubmit={handleSaveSupplier}>
-            <input placeholder="Nomi" value={supplierForm.name} onChange={(event) => setSupplierForm((prev) => ({ ...prev, name: event.target.value }))} />
-            <input placeholder="Telefon" value={supplierForm.phone} onChange={(event) => setSupplierForm((prev) => ({ ...prev, phone: event.target.value }))} />
-            <button type="submit" disabled={saving}>Saqlash</button>
-          </form>
-        </div>
-      </section>
-
-      <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Kirim / invoice</h2>
-          <form className="tool-form" onSubmit={handleSavePurchase}>
-            <select value={purchaseForm.product_id} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, product_id: event.target.value }))}>
-              <option value="">Mahsulot tanlang</option>
-              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-            </select>
-            <input type="number" min="0" step="any" placeholder="Miqdor" value={purchaseForm.quantity} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, quantity: event.target.value }))} />
-            <input type="number" min="0" placeholder="Jami narx" value={purchaseForm.price} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, price: event.target.value }))} />
-            <input placeholder="Yetkazib beruvchi" value={purchaseForm.supplier_name} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, supplier_name: event.target.value }))} />
-            <input placeholder="Supplier telefon" value={purchaseForm.supplier_phone} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, supplier_phone: event.target.value }))} />
-            <input placeholder="Invoice raqami" value={purchaseForm.invoice_number} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, invoice_number: event.target.value }))} />
-            <input placeholder="Batch" value={purchaseForm.batch_number} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, batch_number: event.target.value }))} />
-            <input type="date" value={purchaseForm.expiry_date} onChange={(event) => setPurchaseForm((prev) => ({ ...prev, expiry_date: event.target.value }))} />
-            <button type="submit" disabled={saving}>Kirim qilish</button>
-          </form>
-        </div>
-
-        <div className="tool-panel">
-          <h2>Inventar audit</h2>
-          <form className="tool-form" onSubmit={handleSaveAudit}>
-            <select value={auditForm.product_id} onChange={(event) => setAuditForm((prev) => ({ ...prev, product_id: event.target.value }))}>
-              <option value="">Mahsulot tanlang</option>
-              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-            </select>
-            <input type="number" min="0" step="any" placeholder="Sanab topilgan qoldiq" value={auditForm.quantity} onChange={(event) => setAuditForm((prev) => ({ ...prev, quantity: event.target.value }))} />
-            <input placeholder="Sabab" value={auditForm.reason} onChange={(event) => setAuditForm((prev) => ({ ...prev, reason: event.target.value }))} />
-            <button type="submit" disabled={saving}>Qoldiqni tuzatish</button>
-          </form>
-        </div>
+        <ReportCard title="Bugun" report={todayReport} />
+        <ReportCard title="Kecha" report={yesterdayReport} />
       </section>
 
       <section className="tool-panel">
-        <h2>Qaytarish / refund</h2>
-        <form className="tool-form" onSubmit={handleSaveReturn}>
-          <select value={returnForm.sale_item_id} onChange={(event) => setReturnForm((prev) => ({ ...prev, sale_item_id: event.target.value }))}>
-            <option value="">Sotuv mahsulotini tanlang</option>
-            {saleItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                #{item.saleReceipt} - {item.product_name} ({item.quantity - Number(item.returned_quantity || 0)} qoldi)
-              </option>
-            ))}
-          </select>
-          <input type="number" min="0" step="any" placeholder="Qaytarish miqdori" value={returnForm.quantity} onChange={(event) => setReturnForm((prev) => ({ ...prev, quantity: event.target.value }))} />
-          <input placeholder="Sabab" value={returnForm.reason} onChange={(event) => setReturnForm((prev) => ({ ...prev, reason: event.target.value }))} />
-          <button type="submit" disabled={saving}>Qaytarishni saqlash</button>
-        </form>
-      </section>
-
-      <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Kunlik savdo</h2>
-          <div className="tool-list">
-            {summary.dailySales.slice(-7).map((row) => (
-              <div className="tool-list-row" key={row.date}>
-                <span>{row.date}</span>
-                <strong>{formatCurrency(row.total)}</strong>
-              </div>
-            ))}
-            {summary.dailySales.length === 0 && <p className="tool-empty">Kunlik savdo hali yo'q.</p>}
+        <div className="reports-panel-header">
+          <div>
+            <h2>Kunlik hisobot</h2>
+            <p className="tool-muted">
+              Har bir kun bo'yicha sotuv, tannarx, foyda va qaytarilgan summa.
+            </p>
           </div>
         </div>
-
-        <div className="tool-panel">
-          <h2>Eng ko'p sotilganlar</h2>
-          <div className="tool-list">
-            {summary.topProducts.map((product) => (
-              <div className="tool-list-row" key={product.id}>
-                <span>{product.name}</span>
-                <strong>{Number(product.total_subtracted || 0).toLocaleString()} {product.quantity_type}</strong>
-              </div>
-            ))}
-            {summary.topProducts.length === 0 && <p className="tool-empty">Sotuv ma'lumotlari hali yo'q.</p>}
-          </div>
-        </div>
-      </section>
-
-      <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Kam qolgan mahsulotlar</h2>
-          <div className="tool-list compact">
-            {summary.lowStock.map((product) => (
-              <div className="tool-list-row" key={product.id}>
-                <span>{product.name}</span>
-                <strong>{Number(product.quantity).toLocaleString()} / {Number(product.min_quantity || 0).toLocaleString()} {product.quantity_type}</strong>
-              </div>
-            ))}
-            {summary.lowStock.length === 0 && <p className="tool-empty">Ombor holati yaxshi.</p>}
-          </div>
-        </div>
-
-        <div className="tool-panel">
-          <h2>Sotilmayotgan mahsulotlar</h2>
-          <div className="tool-list compact">
-            {summary.deadStock.map((product) => (
-              <div className="tool-list-row" key={product.id}>
-                <span>{product.name}</span>
-                <strong>{Number(product.quantity || 0).toLocaleString()} {product.quantity_type}</strong>
-              </div>
-            ))}
-            {summary.deadStock.length === 0 && <p className="tool-empty">Barcha mahsulotlarda harakat bor.</p>}
-          </div>
+        <div className="tool-table-wrap">
+          <table className="tool-table">
+            <thead>
+              <tr>
+                <th>Sana</th>
+                <th>Sotuvlar</th>
+                <th>Mahsulot soni</th>
+                <th>Umumiy sotuv</th>
+                <th>Tannarx</th>
+                <th>Qaytarilgan</th>
+                <th>Total foyda</th>
+                <th>Sof foyda</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => (
+                <tr key={report.date}>
+                  <td>{report.date}</td>
+                  <td>{formatNumber(report.salesCount)}</td>
+                  <td>{formatNumber(report.itemCount)}</td>
+                  <td>{formatCurrency(report.revenue)}</td>
+                  <td>
+                    {report.hasEstimatedCost ? "~" : ""}
+                    {formatCurrency(report.costOfGoods)}
+                  </td>
+                  <td>{formatCurrency(report.returnedAmount)}</td>
+                  <td>{formatCurrency(report.grossProfit)}</td>
+                  <td className={report.netProfit >= 0 ? "positive-text" : "danger-text"}>
+                    {formatCurrency(report.netProfit)}
+                  </td>
+                </tr>
+              ))}
+              {reports.length === 0 && (
+                <tr>
+                  <td colSpan="8" className="tool-empty-cell">
+                    Hali sotuv tarixi yo'q.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Qarz hisoboti</h2>
-          <div className="tool-list compact">
-            {summary.debtReport.slice(0, 8).map((debtor) => (
-              <div className="tool-list-row" key={debtor.id}>
-                <span>{debtor.name}</span>
-                <strong>{formatCurrency(debtor.price)}</strong>
-              </div>
-            ))}
-            {summary.debtReport.length === 0 && <p className="tool-empty">Qarzlar yo'q.</p>}
+      <section className="tool-panel reports-history-panel">
+        <div className="reports-panel-header">
+          <div>
+            <h2>Sotuv tarixi</h2>
+            <p className="tool-muted">
+              Oxirgi cheklarning umumiy summasi, to'lov turi va foydasi.
+            </p>
           </div>
         </div>
-
-        <div className="tool-panel">
-          <h2>Oxirgi kirimlar</h2>
-          <div className="tool-list compact">
-            {purchases.slice(0, 8).map((purchase) => (
-              <div className="tool-list-row" key={purchase.id}>
-                <span>{purchase.invoice_number} - {purchase.supplier_name}</span>
-                <strong>{formatCurrency(purchase.total)}</strong>
-              </div>
-            ))}
-            {purchases.length === 0 && <p className="tool-empty">Kirimlar hali yo'q.</p>}
-          </div>
+        <div className="tool-table-wrap">
+          <table className="tool-table">
+            <thead>
+              <tr>
+                <th>Chek</th>
+                <th>Sana</th>
+                <th>To'lov</th>
+                <th>Mahsulot soni</th>
+                <th>Sotuv</th>
+                <th>Sof foyda</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesWithMetrics.map((sale) => (
+                <tr
+                  key={sale.id}
+                  className="pressable-table-row"
+                  tabIndex="0"
+                  role="button"
+                  onClick={() => setSelectedSale(sale)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedSale(sale);
+                    }
+                  }}
+                >
+                  <td>#{sale.receipt_number}</td>
+                  <td>{formatDateTime(sale.created_at)}</td>
+                  <td>
+                    <span className={`payment-badge ${sale.payment_method || "cash"}`}>
+                      {paymentLabels[sale.payment_method] || sale.payment_method || "-"}
+                    </span>
+                  </td>
+                  <td>{formatNumber(sale.metrics.itemCount)}</td>
+                  <td>{formatCurrency(sale.metrics.revenue)}</td>
+                  <td className={sale.metrics.netProfit >= 0 ? "positive-text" : "danger-text"}>
+                    {formatCurrency(sale.metrics.netProfit)}
+                  </td>
+                </tr>
+              ))}
+              {salesWithMetrics.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="tool-empty-cell">
+                    Hali sotuv tarixi yo'q.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <section className="tool-grid two-columns">
-        <div className="tool-panel">
-          <h2>Yetkazib beruvchilar</h2>
-          <div className="tool-list compact">
-            {suppliers.slice(0, 8).map((supplier) => (
-              <div className="tool-list-row" key={supplier.id}>
-                <span>{supplier.name}</span>
-                <strong>{supplier.phone || "-"}</strong>
-              </div>
-            ))}
-            {suppliers.length === 0 && <p className="tool-empty">Supplier hali yo'q.</p>}
-          </div>
-        </div>
-
-        <div className="tool-panel">
-          <h2>Oxirgi sotuvlar</h2>
-          <div className="tool-list compact">
-            {sales.slice(0, 8).map((sale) => (
-              <div className="tool-list-row" key={sale.id}>
-                <span>#{sale.receipt_number}</span>
-                <strong>{formatCurrency(sale.total)}</strong>
-              </div>
-            ))}
-            {sales.length === 0 && <p className="tool-empty">Sotuvlar hali yo'q.</p>}
-          </div>
-        </div>
-      </section>
+      {selectedSale && (
+        <SaleDetailsDrawer
+          sale={selectedSale}
+          productCostById={productCostById}
+          onClose={() => setSelectedSale(null)}
+        />
+      )}
     </main>
   );
 };
+
+const SaleDetailsDrawer = ({ sale, productCostById, onClose }) => {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const payments = Array.isArray(sale.payments) ? sale.payments : [];
+  const returns = Array.isArray(sale.returns) ? sale.returns : [];
+
+  return (
+    <div className="report-drawer-overlay" onMouseDown={onClose}>
+      <aside
+        className="report-drawer"
+        onMouseDown={(event) => event.stopPropagation()}
+        aria-label="Sotuv tafsilotlari"
+      >
+        <div className="report-drawer-header">
+          <div>
+            <span>Chek</span>
+            <h2>#{sale.receipt_number}</h2>
+            <p>{formatDateTime(sale.created_at)}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Yopish">
+            X
+          </button>
+        </div>
+
+        <div className="report-drawer-summary">
+          <div>
+            <span>To'lov</span>
+            <strong>
+              <span className={`payment-badge ${sale.payment_method || "cash"}`}>
+                {paymentLabels[sale.payment_method] || sale.payment_method || "-"}
+              </span>
+            </strong>
+          </div>
+          <div>
+            <span>Jami sotuv</span>
+            <strong>{formatCurrency(sale.metrics.revenue)}</strong>
+          </div>
+          <div>
+            <span>Tannarx</span>
+            <strong>
+              {sale.metrics.hasEstimatedCost ? "~" : ""}
+              {formatCurrency(sale.metrics.costOfGoods)}
+            </strong>
+          </div>
+          <div>
+            <span>Sof foyda</span>
+            <strong className={sale.metrics.netProfit >= 0 ? "positive-text" : "danger-text"}>
+              {formatCurrency(sale.metrics.netProfit)}
+            </strong>
+          </div>
+        </div>
+
+        <section className="report-drawer-section">
+          <h3>Mahsulotlar</h3>
+          <div className="report-drawer-items">
+            {items.map((item) => {
+              const quantity = Number(item.quantity || 0);
+              const returnedQuantity = Number(item.returned_quantity || 0);
+              const netQuantity = Math.max(quantity - returnedQuantity, 0);
+              const costMeta = getItemCostMeta(item, productCostById);
+              const totalCost = costMeta.unitCost * netQuantity;
+              const totalPrice = Number(item.total_price || 0);
+              const profit = totalPrice - totalCost;
+
+              return (
+                <div className="report-drawer-item" key={item.id || `${getProductId(item)}-${getProductName(item)}`}>
+                  <div className="report-drawer-item-main">
+                    <strong>{getProductName(item)}</strong>
+                    <span>
+                      {formatNumber(quantity)} x {formatCurrency(item.unit_price)}
+                    </span>
+                  </div>
+                  <div className="report-drawer-item-grid">
+                    <span>Chegirma: {formatCurrency(item.discount)}</span>
+                    <span>Sotuv: {formatCurrency(totalPrice)}</span>
+                    <span>
+                      Tannarx: {costMeta.estimated ? "~" : ""}
+                      {formatCurrency(totalCost)}
+                    </span>
+                    <span className={profit >= 0 ? "positive-text" : "danger-text"}>
+                      Foyda: {formatCurrency(profit)}
+                    </span>
+                  </div>
+                  {returnedQuantity > 0 && (
+                    <div className="report-drawer-note">
+                      Qaytarilgan: {formatNumber(returnedQuantity)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {items.length === 0 && <div className="tool-empty">Mahsulotlar topilmadi.</div>}
+          </div>
+        </section>
+
+        <section className="report-drawer-section">
+          <h3>To'lov va yakun</h3>
+          <div className="report-drawer-totals">
+            <div>
+              <span>Subtotal</span>
+              <strong>{formatCurrency(sale.subtotal)}</strong>
+            </div>
+            <div>
+              <span>Chegirma</span>
+              <strong>{formatCurrency(sale.discount)}</strong>
+            </div>
+            <div>
+              <span>To'landi</span>
+              <strong>{formatCurrency(sale.paid_amount)}</strong>
+            </div>
+            <div>
+              <span>Qaytarilgan</span>
+              <strong>{formatCurrency(sale.metrics.returnedAmount)}</strong>
+            </div>
+          </div>
+          {payments.length > 0 && (
+            <div className="report-drawer-payment-list">
+              {payments.map((payment, index) => (
+                <div key={payment.id || index}>
+                  <span>{paymentLabels[payment.method] || payment.method}</span>
+                  <strong>{formatCurrency(payment.amount)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {returns.length > 0 && (
+            <div className="report-drawer-note">
+              Qaytarishlar soni: {formatNumber(returns.length)}
+            </div>
+          )}
+        </section>
+      </aside>
+    </div>
+  );
+};
+
+const ReportCard = ({ title, report }) => (
+  <div className="tool-panel report-card">
+    <div className="reports-panel-header">
+      <div>
+        <h2>{title}</h2>
+        <p className="tool-muted">{report.date}</p>
+      </div>
+      <strong className={report.netProfit >= 0 ? "positive-text" : "danger-text"}>
+        {formatCurrency(report.netProfit)}
+      </strong>
+    </div>
+    <div className="report-card-grid">
+      <div>
+        <span>Sotuvlar soni</span>
+        <strong>{formatNumber(report.salesCount)}</strong>
+      </div>
+      <div>
+        <span>Umumiy sotuv</span>
+        <strong>{formatCurrency(report.revenue)}</strong>
+      </div>
+      <div>
+        <span>Total foyda</span>
+        <strong>{formatCurrency(report.grossProfit)}</strong>
+      </div>
+      <div>
+        <span>Qaytarilgan</span>
+        <strong>{formatCurrency(report.returnedAmount)}</strong>
+      </div>
+    </div>
+  </div>
+);
 
 export default ReportsPage;
