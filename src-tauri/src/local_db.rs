@@ -11,7 +11,7 @@ use tauri::Manager;
 use time::{Month, OffsetDateTime};
 
 const DATABASE_FILE_NAME: &str = "sstore.sqlite";
-const CURRENT_SCHEMA_VERSION: i64 = 7;
+const CURRENT_SCHEMA_VERSION: i64 = 8;
 static SCANNER_SERVER: OnceLock<ScannerServerInfo> = OnceLock::new();
 
 #[derive(Serialize)]
@@ -267,13 +267,7 @@ fn route_dynamic(
 
     if let Some(id) = path_id(path, "/api/products/delete/", "/") {
         if method == "DELETE" {
-            conn.execute(
-                "DELETE FROM products
-                 WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
-                params![id, market.id],
-            )
-            .map_err(|err| err.to_string())?;
-            return Ok(ok(json!({"message": "Product deleted successfully"})));
+            return product_delete(conn, market, id);
         }
     }
 
@@ -470,7 +464,7 @@ fn product_by_barcode(
              FROM barcodes b
              JOIN products p ON p.id = b.product_id
              JOIN categories c ON c.id = p.category_id
-             WHERE b.number = ?1 AND c.market_id = ?2
+             WHERE b.number = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL
              LIMIT 1",
             params![barcode, market.id],
             |row| row.get::<_, i64>(0),
@@ -708,7 +702,9 @@ fn product_update(
         .query_row(
             "SELECT cost_per_quantity
              FROM products
-             WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
+             WHERE id = ?1
+               AND deleted_at IS NULL
+               AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
             params![product_id, market.id],
             |row| row.get::<_, f64>(0),
         )
@@ -722,7 +718,9 @@ fn product_update(
         "UPDATE products
          SET category_id = ?1, name = ?2, quantity = ?3, min_quantity = COALESCE(?4, min_quantity), quantity_type = ?5,
              price_per_quantity = ?6, cost_per_quantity = COALESCE(?7, cost_per_quantity), image = COALESCE(?8, image), status = ?9
-         WHERE id = ?10 AND category_id IN (SELECT id FROM categories WHERE market_id = ?11)",
+         WHERE id = ?10
+           AND deleted_at IS NULL
+           AND category_id IN (SELECT id FROM categories WHERE market_id = ?11)",
         params![category_id, name, quantity, min_quantity, quantity_type, price_per_quantity, cost_per_quantity, image, status, product_id, market.id],
     )
     .map_err(|err| err.to_string())?;
@@ -762,15 +760,38 @@ fn product_delete_several(
 ) -> Result<ApiResponse, String> {
     if let Some(ids) = body.get("ids").and_then(Value::as_array) {
         for id in ids.iter().filter_map(Value::as_i64) {
-            conn.execute(
-                "DELETE FROM products
-                 WHERE id = ?1 AND category_id IN (SELECT id FROM categories WHERE market_id = ?2)",
-                params![id, market.id],
-            )
-            .map_err(|err| err.to_string())?;
+            mark_product_deleted(conn, market, id)?;
         }
     }
     Ok(ok(json!({"message": "Products deleted successfully"})))
+}
+
+fn product_delete(
+    conn: &Connection,
+    market: &MarketSession,
+    product_id: i64,
+) -> Result<ApiResponse, String> {
+    let changed = mark_product_deleted(conn, market, product_id)?;
+    if changed == 0 {
+        return Ok(error(404, "Product not found"));
+    }
+    Ok(ok(json!({"message": "Product deleted successfully"})))
+}
+
+fn mark_product_deleted(
+    conn: &Connection,
+    market: &MarketSession,
+    product_id: i64,
+) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE products
+         SET deleted_at = ?1
+         WHERE id = ?2
+           AND deleted_at IS NULL
+           AND category_id IN (SELECT id FROM categories WHERE market_id = ?3)",
+        params![now_iso(), product_id, market.id],
+    )
+    .map_err(|err| err.to_string())
 }
 
 fn product_detail(
@@ -972,7 +993,7 @@ fn save_product_updates(
                 "SELECT p.name, p.quantity, p.cost_per_quantity
                  FROM products p
                  JOIN categories c ON c.id = p.category_id
-                 WHERE p.id = ?1 AND c.market_id = ?2",
+                 WHERE p.id = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL",
                 params![product_id, market.id],
                 |row| {
                     Ok((
@@ -1168,7 +1189,7 @@ fn save_bought_products(
             "SELECT p.quantity, p.cost_per_quantity
              FROM products p
              JOIN categories c ON c.id = p.category_id
-             WHERE p.id = ?1 AND c.market_id = ?2",
+             WHERE p.id = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL",
             params![product_id, market.id],
             |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?)),
         )
@@ -1317,7 +1338,7 @@ fn inventory_audit(
             "SELECT p.quantity
              FROM products p
              JOIN categories c ON c.id = p.category_id
-             WHERE p.id = ?1 AND c.market_id = ?2",
+             WHERE p.id = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL",
             params![product_id, market.id],
             |row| row.get::<_, f64>(0),
         )
@@ -1335,7 +1356,7 @@ fn inventory_audit(
                 WHEN ?1 <= min_quantity THEN 'few'
                 ELSE 'available'
              END
-         WHERE id = ?2",
+         WHERE id = ?2 AND deleted_at IS NULL",
         params![counted_quantity, product_id],
     )
     .map_err(|err| err.to_string())?;
@@ -1767,7 +1788,7 @@ fn products_for_category_json(conn: &Connection, category_id: i64) -> Result<Vec
              FROM products p
              JOIN categories c ON c.id = p.category_id
              LEFT JOIN product_updates u ON u.product_id = p.id
-             WHERE p.category_id = ?1
+             WHERE p.category_id = ?1 AND p.deleted_at IS NULL
              GROUP BY p.id
              ORDER BY p.id DESC",
         )
@@ -1789,7 +1810,7 @@ fn product_json(conn: &Connection, market_id: i64, product_id: i64) -> Result<Va
          FROM products p
          JOIN categories c ON c.id = p.category_id
          LEFT JOIN product_updates u ON u.product_id = p.id
-         WHERE p.id = ?1 AND c.market_id = ?2
+         WHERE p.id = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL
          GROUP BY p.id",
         params![product_id, market_id],
         product_from_row,
@@ -2256,6 +2277,7 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
             image TEXT,
             status TEXT NOT NULL DEFAULT 'ended',
             date TEXT NOT NULL,
+            deleted_at TEXT,
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
         );
 
@@ -2478,6 +2500,7 @@ fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     add_column_if_missing(conn, "markets", "password", "TEXT NOT NULL DEFAULT ''")?;
     add_column_if_missing(conn, "markets", "token", "TEXT")?;
     add_column_if_missing(conn, "products", "min_quantity", "REAL NOT NULL DEFAULT 50")?;
+    add_column_if_missing(conn, "products", "deleted_at", "TEXT")?;
     add_column_if_missing(
         conn,
         "products",
@@ -3320,7 +3343,10 @@ fn category_ids(conn: &Connection, market_id: i64) -> Result<Vec<i64>, String> {
 fn product_ids(conn: &Connection, market_id: i64) -> Result<Vec<i64>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id FROM products p JOIN categories c ON c.id = p.category_id WHERE c.market_id = ?1",
+            "SELECT p.id
+             FROM products p
+             JOIN categories c ON c.id = p.category_id
+             WHERE c.market_id = ?1 AND p.deleted_at IS NULL",
         )
         .map_err(|err| err.to_string())?;
     let rows = stmt
@@ -3353,7 +3379,7 @@ fn product_belongs_to_market(
         "SELECT 1
          FROM products p
          JOIN categories c ON c.id = p.category_id
-         WHERE p.id = ?1 AND c.market_id = ?2",
+         WHERE p.id = ?1 AND c.market_id = ?2 AND p.deleted_at IS NULL",
         params![product_id, market_id],
         |_| Ok(true),
     )
