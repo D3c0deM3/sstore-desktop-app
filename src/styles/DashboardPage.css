@@ -576,6 +576,27 @@ tbody tr:nth-child(even) {
   justify-content: space-between;
 }
 
+.language-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 10px 14px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.language-select select {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  padding: 7px 10px;
+  font-weight: 600;
+  outline: none;
+}
+
 .switch {
   position: relative;
   display: inline-block;

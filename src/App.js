@@ -11,7 +11,9 @@ import QarzlarPage from "./pages/QarzlarPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 import CalculatorPage from "./pages/CalculatorPage.jsx";
 import AiAdvicePage from "./pages/AiAdvicePage.jsx";
+import ProfileEditPage from "./pages/ProfileEditPage.jsx";
 import { useDesktopBackend } from "./desktop/useDesktopBackend.js";
+import { LanguageProvider } from "./i18n/LanguageContext.jsx";
 
 const RootRedirect = () => {
   const token = localStorage.getItem("token");
@@ -66,31 +68,34 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<RootRedirect />} />
-        <Route path="/signin" element={<RegistrationPage />} />
-        <Route path="/register" element={<RegistrationPage />} />
-        <Route path="/plan" element={<PlanPage />} />
-        <Route
-          path="/"
-          element={
-            <PrivateRoute>
-              <DashboardLayout />
-            </PrivateRoute>
-          }
-        >
-          <Route path="dashboard" element={<Dashboardpage />} />
-          <Route path="hisobotlar" element={<ReportsPage />} />
-          <Route path="mahsulotlar" element={<ProductsPage />} />
-          <Route path="qarzlar" element={<QarzlarPage />} />
-          <Route path="sotish" element={<SellPage />} />
-          <Route path="kalkulyator" element={<CalculatorPage />} />
-          <Route path="ai-maslahat" element={<AiAdvicePage />} />
-        </Route>
-        <Route path="*" element={<RootRedirect />} />
-      </Routes>
-    </Router>
+    <LanguageProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/signin" element={<RegistrationPage />} />
+          <Route path="/register" element={<RegistrationPage />} />
+          <Route path="/plan" element={<PlanPage />} />
+          <Route
+            path="/"
+            element={
+              <PrivateRoute>
+                <DashboardLayout />
+              </PrivateRoute>
+            }
+          >
+            <Route path="dashboard" element={<Dashboardpage />} />
+            <Route path="hisobotlar" element={<ReportsPage />} />
+            <Route path="mahsulotlar" element={<ProductsPage />} />
+            <Route path="qarzlar" element={<QarzlarPage />} />
+            <Route path="sotish" element={<SellPage />} />
+            <Route path="kalkulyator" element={<CalculatorPage />} />
+            <Route path="ai-maslahat" element={<AiAdvicePage />} />
+            <Route path="profile/edit" element={<ProfileEditPage />} />
+          </Route>
+          <Route path="*" element={<RootRedirect />} />
+        </Routes>
+      </Router>
+    </LanguageProvider>
   );
 }
 

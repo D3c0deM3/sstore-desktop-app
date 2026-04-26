@@ -122,6 +122,10 @@ fn route_authenticated(
 ) -> Result<ApiResponse, String> {
     match (method, path) {
         ("GET", "/api/dashboard/") | ("GET", "/api/dashboard") => dashboard(conn, market),
+        ("GET", "/api/profile/") | ("GET", "/api/profile") => {
+            ok_result(market_json(conn, market.id)?)
+        }
+        ("POST", "/api/profile/") | ("POST", "/api/profile") => profile_update(conn, market, body),
         ("GET", "/api/categories/") | ("GET", "/api/categories") => {
             ok_result(json!(categories_json(conn, market.id)?))
         }
@@ -548,6 +552,68 @@ fn update_market_plan(
     Ok(ok(
         json!({"message": "Plan updated successfully", "market": market_json(conn, market.id)?}),
     ))
+}
+
+fn profile_update(
+    conn: &Connection,
+    market: &MarketSession,
+    body: &Value,
+) -> Result<ApiResponse, String> {
+    let market_name = text(body, "market_name");
+    let phone_number = text(body, "phone_number");
+    let password = text(body, "password");
+    let remove_profile_picture = body
+        .get("remove_profile_picture")
+        .and_then(|value| {
+            value
+                .as_bool()
+                .or_else(|| value.as_str().map(|text| text == "true" || text == "1"))
+        })
+        .unwrap_or(false);
+    let profile_picture = media_value(body, &["profile_picture", "store_image", "image"]);
+
+    if market_name.is_empty() || phone_number.is_empty() {
+        return Ok(error(400, "Store name and phone number are required"));
+    }
+
+    let duplicate_phone = conn
+        .query_row(
+            "SELECT id FROM markets WHERE phone_number = ?1 AND id != ?2",
+            params![phone_number, market.id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|err| err.to_string())?;
+    if duplicate_phone.is_some() {
+        return Ok(error(400, "Phone number is already used"));
+    }
+
+    conn.execute(
+        "UPDATE markets
+         SET market_name = ?1,
+             phone_number = ?2,
+             profile_picture = CASE
+                WHEN ?3 THEN NULL
+                WHEN ?4 IS NOT NULL THEN ?4
+                ELSE profile_picture
+             END,
+             password = CASE WHEN ?5 = '' THEN password ELSE ?5 END
+         WHERE id = ?6",
+        params![
+            market_name,
+            phone_number,
+            remove_profile_picture,
+            profile_picture,
+            password,
+            market.id
+        ],
+    )
+    .map_err(|err| err.to_string())?;
+
+    Ok(ok(json!({
+        "message": "Profile updated successfully",
+        "market": market_json(conn, market.id)?
+    })))
 }
 
 fn product_create(

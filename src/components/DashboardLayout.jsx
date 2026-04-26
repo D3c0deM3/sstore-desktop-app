@@ -15,7 +15,7 @@ const DashboardLayout = () => {
   const [user, setUser] = useState({});
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
   const location = useLocation();
-  useEffect(() => {
+  const loadUser = () => {
     // Example: fetch user from localStorage or API
     const market = JSON.parse(localStorage.getItem("market"));
     if (market) {
@@ -26,6 +26,12 @@ const DashboardLayout = () => {
         profileImage: market.profile_picture,
       });
     }
+  };
+
+  useEffect(() => {
+    loadUser();
+    window.addEventListener("sstore:market-updated", loadUser);
+    return () => window.removeEventListener("sstore:market-updated", loadUser);
   }, []);
 
   // Theme toggling logic (persistent across all dashboard pages)

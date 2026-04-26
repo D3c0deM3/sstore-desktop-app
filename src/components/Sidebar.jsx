@@ -2,37 +2,39 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import SotishIcon from "../assets/dashboard/sotish.svg";
 import QarzIcon from "../assets/dashboard/qarz-icon.svg";
+import { useLanguage } from "../i18n/LanguageContext.jsx";
 
 const Sidebar = ({ user, getPlanIconClass }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   return (
     <aside className="sidebar">
       <div className="logo" />
       <span className="logo_underline"></span>
       <nav className="menu">
-        <p className="sidebar-menu">Menu</p>
+        <p className="sidebar-menu">{t("menu")}</p>
         <ul>
           <li
             className={location.pathname === "/dashboard" ? "active" : ""}
             onClick={() => navigate("/dashboard")}
           >
             <span className="icon home-icon" />
-            Asosiy sahifa
+            {t("dashboard")}
           </li>
           <li
             className={location.pathname === "/hisobotlar" ? "active" : ""}
             onClick={() => navigate("/hisobotlar")}
           >
             <span className="icon history-icon" />
-            Hisobotlar
+            {t("reports")}
           </li>
           <li
             className={location.pathname === "/mahsulotlar" ? "active" : ""}
             onClick={() => navigate("/mahsulotlar")}
           >
             <span className="icon products-icon" />
-            Mahsulotlar
+            {t("products")}
           </li>
           <li
             className={location.pathname === "/sotish" ? "active" : ""}
@@ -40,7 +42,7 @@ const Sidebar = ({ user, getPlanIconClass }) => {
           >
             <img
               src={SotishIcon}
-              alt="Sotish"
+              alt={t("sell")}
               className="icon sotish-icon"
               style={{
                 width: 20,
@@ -49,7 +51,7 @@ const Sidebar = ({ user, getPlanIconClass }) => {
                 verticalAlign: "middle",
               }}
             />
-            Sotish
+            {t("sell")}
           </li>
           <li
             className={location.pathname === "/qarzlar" ? "active" : ""}
@@ -57,7 +59,7 @@ const Sidebar = ({ user, getPlanIconClass }) => {
           >
             <img
               src={QarzIcon}
-              alt="Qarzlar"
+              alt={t("debts")}
               className="icon qarz-icon"
               style={{
                 width: 20,
@@ -67,21 +69,21 @@ const Sidebar = ({ user, getPlanIconClass }) => {
                 display: "inline-block",
               }}
             />
-            Qarzlar
+            {t("debts")}
           </li>
           <li
             className={location.pathname === "/kalkulyator" ? "active" : ""}
             onClick={() => navigate("/kalkulyator")}
           >
             <span className="icon calculator-icon" />
-            Kalkulyator
+            {t("calculator")}
           </li>
           <li
             className={location.pathname === "/ai-maslahat" ? "active" : ""}
             onClick={() => navigate("/ai-maslahat")}
           >
             <span className="icon ai-icon" />
-            AI maslahat
+            {t("aiAdvice")}
           </li>
         </ul>
       </nav>
@@ -89,7 +91,7 @@ const Sidebar = ({ user, getPlanIconClass }) => {
         {user?.plan && (
           <span className={`plan-icon ${getPlanIconClass?.(user?.plan)}`} />
         )}
-        {user?.plan} PLAN
+        {user?.plan} {t("plan")}
       </div>
     </aside>
   );

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import "../styles/DashboardPage.css";
 import { resolveMediaUrl } from "../utils/imageSource";
+import { useLanguage } from "../i18n/LanguageContext.jsx";
 
 const ProfileSection = ({ user }) => {
   // Always call useOutletContext at the top level
@@ -17,6 +18,7 @@ const ProfileSection = ({ user }) => {
   );
   const profileMenuRef = useRef(null);
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -55,7 +57,6 @@ const ProfileSection = ({ user }) => {
     }
   };
   const handleEditProfile = () => navigate("/profile/edit");
-  const handleChangeLanguage = () => {};
 
   const handleThemeToggle = () => {
     if (setTheme) {
@@ -105,9 +106,9 @@ const ProfileSection = ({ user }) => {
       </div>
       {showProfileMenu && (
         <div className="profile-dropdown">
-          <button onClick={handleEditProfile}>Edit Profile</button>
+          <button onClick={handleEditProfile}>{t("editProfile")}</button>
           <div className="theme-toggle">
-            <span>Light Theme</span>
+            <span>{t("lightTheme")}</span>
             <label className="switch">
               <input
                 type="checkbox"
@@ -117,8 +118,17 @@ const ProfileSection = ({ user }) => {
               <span className="slider"></span>
             </label>
           </div>
-          <button onClick={handleChangeLanguage}>Change Language</button>
-          <button onClick={handleLogout}>Log Out</button>
+          <div className="language-select">
+            <span>{t("language")}</span>
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
+              <option value="uz">{t("uzbek")}</option>
+              <option value="ru">{t("russian")}</option>
+            </select>
+          </div>
+          <button onClick={handleLogout}>{t("logout")}</button>
         </div>
       )}
     </div>
